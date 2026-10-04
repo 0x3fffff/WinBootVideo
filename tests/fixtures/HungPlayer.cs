@@ -1,0 +1,19 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Threading;
+
+internal static class HungPlayer
+{
+    private static void Main(string[] args)
+    {
+        string pidPath = Environment.GetEnvironmentVariable("WINBOOTVIDEO_FIXTURE_PID");
+        if (pidPath != null) File.WriteAllText(pidPath, Process.GetCurrentProcess().Id.ToString());
+        if (Environment.GetEnvironmentVariable("WINBOOTVIDEO_FIXTURE_READY") == "1")
+        {
+            int index = Array.IndexOf(args, "--token");
+            using (var ready = EventWaitHandle.OpenExisting(@"Local\WinBootVideo.Ready." + args[index + 1])) ready.Set();
+        }
+        Thread.Sleep(Timeout.Infinite);
+    }
+}

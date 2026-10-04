@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <!-- WPF uses the installed WindowsDesktop reference pack; no Windows SDK lookup is needed. -->
+    <TargetPlatformMoniker>Windows,Version=7.0</TargetPlatformMoniker>
+    <TargetPlatformDisplayName>Windows</TargetPlatformDisplayName>
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+  </PropertyGroup>
+</Project>

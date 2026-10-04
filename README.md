@@ -1,0 +1,118 @@
+# WinBootVideo 0.1.1
+
+Windows 11 的**登录后动画**工具。输入密码 / PIN 后，先显示全屏视频，再淡出到桌面。每次登录播放一次，锁屏解锁不重复；注销后重新登录会再播放。
+
+这一版用 C# / WPF 编写，提供中文浅色 GUI，可选视频、检查、转码、预览、启用和恢复。初次运行不会更改登录配置。它不替换主板开机 Logo、Windows 引导动画或锁屏画面。
+
+0.1.1 修复保存预览前复制配置时丢失视频路径与自定义设置的问题，增加实际 GUI 点击预览的回归验证；预览失败会显示明确的失败提示及播放器退出码。未成功预览时“启用登录动画”保持不可用。
+
+## 开始使用
+
+1. 打开 `artifacts\WinBootVideo\WinBootVideo.exe`。请保留同目录的全部文件。
+2. 选择 / 拖入本地视频。可以先用包内 `demo-login.mp4` 测试。
+3. 点击“检查视频”。若缺少 FFmpeg 工具，可以直接预览；或选择同时包含 `ffmpeg.exe`、`ffprobe.exe` 的目录。
+4. 需要处理时，指定保留的前几秒，点击“转换并选用”，保存为**新文件**。
+5. 设置音量、屏幕和淡出，点击“保存并全屏预览”。按 Esc / 空格可跳过。播放至少前进 100 毫秒后，正常完成或跳过才算成功；损坏、加载失败或超时不算成功。
+6. 确认效果后点击“启用登录动画”。它会备份并设置**当前用户**的登录 Shell，不要求管理员权限。下次注销 / 重启后登录生效。首次实际登录建议先用示例或已预览的短视频。
+7. 点击“恢复普通登录”可恢复原来的值（包括原本没有该值的情况），下次登录生效。
+
+应用及视频会复制到 `%LOCALAPPDATA%\WinBootVideo`，启用后不依赖原下载目录或原视频文件。不要在启用期间删除这个数据目录。重新保存预览会先恢复普通登录，验证新视频后再点击启用；单纯选取或转换文件不会修改已保存的登录动画。
+
+## 视频要求与处理
+
+| 项目 | 推荐 | 处理行为 |
+|---|---|---|
+| 容器 / 编码 | MP4、H.264 / AVC | GUI 使用 libx264 转码 |
+| 像素与色彩 | 8 位 `yuv420p`、SDR | HDR PQ / HLG 识别后色调映射到 SDR |
+| 分辨率 / 帧率 | 1920×1080、30 fps | 保留比例缩放，补黑边，转为 30 fps |
+| 时长 | 5–15 秒 | 从开头保留指定长度；不提供时间轴编辑 |
+| 音频 | AAC、双声道；或无音轨 | 转为 AAC / 48 kHz / 双声道，或移除 |
+| 衔接 | 黑色首帧；尾帧接近壁纸 | 保留视频结束画面，整体淡出到桌面 |
+
+这些是推荐条件，实际解码能力依赖当前 Windows 的媒体组件。HEVC、AV1、10 位、HDR、透明视频或特殊封装建议先转换。推荐格式检查**不能代替成功预览**。此程序使用本机 WPF 媒体管线，不自带 mpv / VLC 解码器。
+
+不同屏幕比例会保留视频比例，在黑色背景上显示，初版没有拉伸 / 裁切填满模式。副屏可选择用黑色遮罩覆盖，视频只在所选屏幕播放。显示器拔除后会回退到当前主屏。
+
+本地非空视频最大 2 GB；网络路径 / 网络盘不接受。总等待上限可设置 5–90 秒，默认 45 秒，**包含初始化、播放、等待桌面和淡出**；初始化遮罩上限 2–15 秒，默认 8 秒。视频太长会提前退出并判为预览失败，请先剪短。转码长度上限 80 秒。HDR 转码要求 FFmpeg 包含 `zscale`、`tonemap`，较旧或精简版本可能不支持。
+
+典型 SDR 转码命令（GUI 已实现，无需手动执行）：
+
+```powershell
+ffmpeg -n -i "input.mp4" -t 15 -map 0:V:0 -map "0:a:0?" -vf "scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p" -c:v libx264 -preset medium -crf 20 -profile:v high -level:v 4.1 -c:a aac -b:a 160k -ar 48000 -ac 2 -movflags +faststart "login-compatible.mp4"
+```
+
+FFmpeg 为可选的外部工具，按用户选择或 PATH 查找，本包不下载或分发它。FFmpeg 的许可取决于具体构建，见 [FFmpeg 官方许可说明](https://ffmpeg.org/legal.html)；个人准备素材与未来分发含工具的应用包需分别考虑。
+
+## 播放原理
+
+```text
+密码 / PIN 验证完成
+  → Winlogon 启动当前用户的 WinBootVideo.Host.exe
+  → 宿主启动播放器，等待不透明全屏窗口就绪
+  → 收到窗口就绪信号后启动本会话的 Explorer
+  → 视频在覆盖层中播放，Explorer 在后面准备桌面
+  → 保留结束画面，淡出覆盖层，播放器 / 宿主退出
+```
+
+“就绪”指 WPF `ContentRendered` 的**不透明窗口**已呈现，不等于第一帧视频已解码。它允许先遮住桌面；媒体解码失败后也会退出。桌面就绪判断使用当前会话的 `GetShellWindow`，它只能表明 Shell 桌面窗口存在，不保证所有任务栏图标、启动软件或壁纸插件已经加载。
+
+独立宿主使用 .NET Framework 4.8，播放器 / GUI 使用 .NET 8。宿主不依赖播放器的 UI 线程，初始化未就绪或总等待超时会终止**自己启动的播放器进程**并尝试启动 Explorer；播放器还有独立线程，在宿主死亡 / 超过硬期限时自行退出。不结束其他应用、不改任务栏 / 桌面图标可见状态。
+
+同次登录用 Windows 访问令牌的 AuthenticationId 与会话登录时间组合去重，避免宿主重启后重复播放，也避免重启后 LUID 被复用而误跳过新登录。会话时间通过只读 [LsaGetLogonSessionData](https://learn.microsoft.com/en-us/windows/win32/api/ntsecapi/nf-ntsecapi-lsagetlogonsessiondata) 获取。锁屏解锁不会重新触发 Winlogon Shell 启动。恢复保留原始 Shell 的存在状态、文本与注册表类型，并核验用户 SID；若其他软件改了 Shell，本工具不会覆盖它。
+
+唯一登录配置写入位置：
+
+```text
+HKCU\Software\Microsoft\Windows NT\CurrentVersion\Winlogon\Shell
+```
+
+Windows 11 Home / Pro 的个人桌面采用这一用户级方案；企业策略、不同 Windows 构建、媒体驱动和第三方 Shell 会影响实际体验。已有其他自定义用户 Shell 或用户 Shell 策略时，初版拒绝启用。此方案仍需在你的真实登录中验证；不能保证 Windows 欢迎页与视频之间完全无黑屏，也不能保证预览与冷启动的音频 / GPU 时序一致。
+
+## 如果登录后没有桌面
+
+1. 优先按 Esc / 空格跳过，或等待默认 45 秒。宿主会尝试放行 Explorer。
+2. 若仍没有桌面，按 `Ctrl+Shift+Esc` 打开任务管理器；必要时先 `Ctrl+Alt+Del` → 任务管理器。
+3. “运行新任务”输入 `explorer.exe`，先进入桌面。
+4. 再运行 `%LOCALAPPDATA%\WinBootVideo\恢复普通登录.cmd`。这会使用 .NET Framework 宿主恢复备份，即使 .NET 8 GUI 无法运行也可使用。
+
+也可以在任务管理器运行新任务中执行（把环境变量展开为当前用户真实路径）：
+
+```text
+"C:\Users\你的用户名\AppData\Local\WinBootVideo\app\WinBootVideo.Host.exe" --restore --data-dir "C:\Users\你的用户名\AppData\Local\WinBootVideo"
+```
+
+备份位于 `shell-backup.json`，日志位于 `logs\host.log` 与 `logs\player.log`。若宿主 / 备份被删除，任务管理器中运行 `regedit.exe`，查看上述 **HKCU** 键：仅在 Shell 仍是 WinBootVideo 命令时，按备份恢复；如果备份记录 `exists: false`，删除这个 **Shell 值**，不要删除整个 Winlogon 键。不要更改 HKLM。原本是其他值时必须按原值和类型恢复。设置与备份都是当前用户文件，请保留到完成恢复。
+
+卸载：先在 GUI 恢复普通登录，确认下一次登录正常，再删除 `%LOCALAPPDATA%\WinBootVideo` 和下载包。
+
+## 运行与开发
+
+运行：Windows 11 x64，.NET Framework 4.8、**.NET 8 Desktop Runtime x64**。Windows 11 通常含 Framework 4.8 系列；若 GUI 提示运行时缺失，安装 [微软 .NET 8 Desktop Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)。使用 Desktop Runtime，单独的 .NET Runtime 不含 WPF。FFmpeg 仅检查 / 转码需要。该包为依赖运行时的版本，不是单文件自包含版本。
+
+构建需要 x64 .NET 8 SDK（`global.json` 指定 8.0.422）、内置 Framework C# 编译器；无第三方 NuGet 包，仓库禁用了包源：
+
+```powershell
+./build.ps1 -Test
+./verify.ps1 -FFmpegDirectory "E:\项目\ffmpeg\bin"
+```
+
+`build.ps1 -Test` 验证超时状态、命令行转义、备份恢复和素材保存；注册表通过模拟对象测试。`verify.ps1` 还进行真实转码、WPF 窗口播放、损坏文件、超时、卡死子进程、宿主死亡及播放器缺失验证。验证全部用预览模式，不注册 Shell、不注销、不重启。测试播放器会短暂显示普通窗口。
+
+开发 / 检查可指定独立数据目录，不影响默认个人配置：
+
+```powershell
+.\artifacts\WinBootVideo\WinBootVideo.exe --data-dir "E:\Project\WinBootVideo\.runtime\dev"
+.\artifacts\WinBootVideo\WinBootVideo.exe --render-ui "E:\Project\WinBootVideo\artifacts\gui-preview.png" --data-dir "E:\Project\WinBootVideo\.runtime\ui-check"
+```
+
+源码结构：`src\WinBootVideo` 是 GUI / 播放器；`src\Host` 是独立宿主；`tests` 是逻辑与集成验证。当前版不包含自动更新、开机前动画、EFI Logo 替换、时间轴编辑、主题素材库或多用户管理员部署。
+
+## 开源参考与许可
+
+实现代码为本项目新编写，使用 MIT 许可；示例视频为本项目原创。仅参考下列项目的架构与行为，没有复制动画素材或受限制的实现代码。`research/sources` 中用于个人调研的第三方源码快照沿用各原项目许可，不属于本项目 MIT 授权，也不放入可运行应用包：
+
+- [DARLING-in-the-Windows](https://github.com/Rantkid/DARLING-in-the-Windows)：WPF 覆盖层、用户 Shell、Explorer 后台启动。它使用 PolyForm Noncommercial，不能将其视为可自由商用的 MIT 项目。
+- [AutoBloom](https://github.com/willnode/autobloom)：登录视频、首尾画面衔接等思路，具体源代码与许可见调研。
+- [HackBGRT](https://github.com/Metabolix/HackBGRT)：UEFI BGRT 静态 Logo，属于另一个阶段，不纳入此应用。
+
+详细候选项目、许可证与差异见 [调研报告](research/windows-login-animation.md)。WPF 播放行为参考 [微软多媒体概览](https://learn.microsoft.com/en-us/dotnet/desktop/wpf/graphics-multimedia/multimedia-overview)，Shell 窗口判断参考 [GetShellWindow 官方文档](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getshellwindow)。

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0-windows</TargetFramework><UseWPF>true</UseWPF><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="fixtures/*.cs"/>
+    <ProjectReference Include="../src/WinBootVideo/WinBootVideo.csproj"/>
+    <Compile Include="../src/Host/SupervisorPolicy.cs" Link="SupervisorPolicy.cs"/>
+    <Compile Include="../src/Host/LogonSessionIdentity.cs" Link="LogonSessionIdentity.cs"/>
+  </ItemGroup>
+</Project>

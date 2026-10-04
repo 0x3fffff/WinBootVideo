@@ -1,0 +1,9 @@
+bin/
+obj/
+artifacts/
+.runtime/
+.cli/
+*.user
+*.log
+# Downloaded reference snapshots are local research caches, not project source.
+research/sources/
