@@ -13,6 +13,7 @@ internal static class HungPlayer
         {
             int index = Array.IndexOf(args, "--token");
             using (var ready = EventWaitHandle.OpenExisting(@"Local\WinBootVideo.Ready." + args[index + 1])) ready.Set();
+            using (var playback = EventWaitHandle.OpenExisting(@"Local\WinBootVideo.Playback." + args[index + 1])) playback.Set();
         }
         Thread.Sleep(Timeout.Infinite);
     }

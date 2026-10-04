@@ -1,10 +1,10 @@
-# WinBootVideo 0.1.1
+# WinBootVideo 0.1.2
 
-Windows 11 的**登录后动画**工具。输入密码 / PIN 后，先显示全屏视频，再淡出到桌面。每次登录播放一次，锁屏解锁不重复；注销后重新登录会再播放。
+Windows 11 的**登录后动画**工具。完成密码 / PIN / 图片密码验证、登录画面退场后，先显示全屏视频，再淡出到桌面。每次登录播放一次，锁屏解锁不重复；注销后重新登录会再播放。
 
 这一版用 C# / WPF 编写，提供中文浅色 GUI，可选视频、检查、转码、预览、启用和恢复。初次运行不会更改登录配置。它不替换主板开机 Logo、Windows 引导动画或锁屏画面。
 
-0.1.1 修复保存预览前复制配置时丢失视频路径与自定义设置的问题，增加实际 GUI 点击预览的回归验证；预览失败会显示明确的失败提示及播放器退出码。未成功预览时“启用登录动画”保持不可用。
+0.1.2 修复视频在不可见桌面上提前播放、登录后只能看到结尾的问题：窗口渲染后先等待自己的桌面成为输入桌面，再从第 0 秒开始播放。输入图片密码或等待登录画面的时间不消耗视频加载与播放预算。新增实际非输入桌面回归及等待后从零播放验证，保留 0.1.1 的保存预览修复。未成功预览时“启用登录动画”保持不可用。
 
 ## 开始使用
 
@@ -33,7 +33,7 @@ Windows 11 的**登录后动画**工具。输入密码 / PIN 后，先显示全�
 
 不同屏幕比例会保留视频比例，在黑色背景上显示，初版没有拉伸 / 裁切填满模式。副屏可选择用黑色遮罩覆盖，视频只在所选屏幕播放。显示器拔除后会回退到当前主屏。
 
-本地非空视频最大 2 GB；网络路径 / 网络盘不接受。总等待上限可设置 5–90 秒，默认 45 秒，**包含初始化、播放、等待桌面和淡出**；初始化遮罩上限 2–15 秒，默认 8 秒。视频太长会提前退出并判为预览失败，请先剪短。转码长度上限 80 秒。HDR 转码要求 FFmpeg 包含 `zscale`、`tonemap`，较旧或精简版本可能不支持。
+本地非空视频最大 2 GB；网络路径 / 网络盘不接受。播放等待上限可设置 5–90 秒，默认 45 秒，**从桌面可见、请求播放时开始计时，包含视频加载、播放、等待桌面和淡出**。初始化上限 2–15 秒，默认 8 秒，分别保护遮罩初始化、可见后的播放握手和视频加载。输入密码、等待登录画面的时间单独计算；超过 15 分钟仍未进入可见桌面会安全跳过本次动画，之后直接进入普通桌面。视频太长会提前退出并判为预览失败，请先剪短。转码长度上限 80 秒。HDR 转码要求 FFmpeg 包含 `zscale`、`tonemap`，较旧或精简版本可能不支持。
 
 典型 SDR 转码命令（GUI 已实现，无需手动执行）：
 
@@ -46,15 +46,20 @@ FFmpeg 为可选的外部工具，按用户选择或 PATH 查找，本包不下�
 ## 播放原理
 
 ```text
-密码 / PIN 验证完成
-  → Winlogon 启动当前用户的 WinBootVideo.Host.exe
+Winlogon 启动当前用户的 WinBootVideo.Host.exe
   → 宿主启动播放器，等待不透明全屏窗口就绪
   → 收到窗口就绪信号后启动本会话的 Explorer
-  → 视频在覆盖层中播放，Explorer 在后面准备桌面
+  → 播放器等待自己的桌面成为当前可见的输入桌面
+  → 从第 0 秒加载并播放视频，另发开始信号，播放预算此时开始
+  → Explorer 在覆盖层后面准备桌面
   → 保留结束画面，淡出覆盖层，播放器 / 宿主退出
 ```
 
-“就绪”指 WPF `ContentRendered` 的**不透明窗口**已呈现，不等于第一帧视频已解码。它允许先遮住桌面；媒体解码失败后也会退出。桌面就绪判断使用当前会话的 `GetShellWindow`，它只能表明 Shell 桌面窗口存在，不保证所有任务栏图标、启动软件或壁纸插件已经加载。
+“遮罩就绪”指 WPF `ContentRendered` 的**不透明窗口**已渲染，不等于用户已经看到它或第一帧视频已解码。播放器在 UI 线程查询自身桌面的 `GetUserObjectInformation(UOI_IO)`，只有它连续 300 毫秒成为输入桌面才开始播放。宿主使用独立的“遮罩就绪”和“开始播放”事件，分别决定启动 Explorer 与播放超时。查询成功的 WTS 会话状态也须为 Active；启动早期 WTS 不可用时，以 UOI_IO 判断并记录原因。播放中若离开输入桌面，本次动画会退出，后续解锁不续播。
+
+Windows 的 [ARSO](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/component-updates/winlogon-automatic-restart-sign-on--arso-) 可在重启后先自动登录，再保持锁定，因此 Shell 启动可能早于用户完成图片密码解锁。本程序不以 Shell 启动或固定延迟代替可见性判断，也不调整 ARSO 或密码设置。[输入桌面](https://learn.microsoft.com/en-us/windows/win32/winstation/desktops) 是当前可见且接收输入的桌面；[UOI_IO](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getuserobjectinformationw) 用于查询这个状态，不读取手势、凭据或登录画面内容。
+
+桌面就绪判断另使用当前会话的 `GetShellWindow`，它只能表明 Shell 桌面窗口存在，不保证所有任务栏图标、启动软件或壁纸插件已经加载。
 
 独立宿主使用 .NET Framework 4.8，播放器 / GUI 使用 .NET 8。宿主不依赖播放器的 UI 线程，初始化未就绪或总等待超时会终止**自己启动的播放器进程**并尝试启动 Explorer；播放器还有独立线程，在宿主死亡 / 超过硬期限时自行退出。不结束其他应用、不改任务栏 / 桌面图标可见状态。
 
@@ -81,7 +86,7 @@ Windows 11 Home / Pro 的个人桌面采用这一用户级方案；企业策略�
 "C:\Users\你的用户名\AppData\Local\WinBootVideo\app\WinBootVideo.Host.exe" --restore --data-dir "C:\Users\你的用户名\AppData\Local\WinBootVideo"
 ```
 
-备份位于 `shell-backup.json`，日志位于 `logs\host.log` 与 `logs\player.log`。若宿主 / 备份被删除，任务管理器中运行 `regedit.exe`，查看上述 **HKCU** 键：仅在 Shell 仍是 WinBootVideo 命令时，按备份恢复；如果备份记录 `exists: false`，删除这个 **Shell 值**，不要删除整个 Winlogon 键。不要更改 HKLM。原本是其他值时必须按原值和类型恢复。设置与备份都是当前用户文件，请保留到完成恢复。
+备份位于 `shell-backup.json`，日志位于 `logs\host.log`、`logs\player.log` 与 `logs\playback-timing.log`。若宿主 / 备份被删除，任务管理器中运行 `regedit.exe`，查看上述 **HKCU** 键：仅在 Shell 仍是 WinBootVideo 命令时，按备份恢复；如果备份记录 `exists: false`，删除这个 **Shell 值**，不要删除整个 Winlogon 键。不要更改 HKLM。原本是其他值时必须按原值和类型恢复。设置与备份都是当前用户文件，请保留到完成恢复。
 
 卸载：先在 GUI 恢复普通登录，确认下一次登录正常，再删除 `%LOCALAPPDATA%\WinBootVideo` 和下载包。
 

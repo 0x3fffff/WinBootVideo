@@ -89,6 +89,7 @@ namespace WinBootVideo.Host
             if (!File.Exists(player)) throw new FileNotFoundException("Player missing.");
             string token = Guid.NewGuid().ToString("N");
             using (var ready = new EventWaitHandle(false, EventResetMode.ManualReset, @"Local\WinBootVideo.Ready." + token))
+            using (var playback = new EventWaitHandle(false, EventResetMode.ManualReset, @"Local\WinBootVideo.Playback." + token))
             {
                 var info = new ProcessStartInfo(player);
                 info.UseShellExecute = false;
@@ -103,14 +104,25 @@ namespace WinBootVideo.Host
                 {
                     if (process == null) throw new IOException("Cannot start player.");
                     Log("player-start: " + process.Id);
+                    Log("login-flow mode=" + (preview ? "preview" : "login") + " version=0.1.2");
                     supervisorRunning = true;
                     var clock = lifetime;
                     var policy = new SupervisorPolicy(startup * 1000L, total * 1000L);
                     bool desktopStarted = false;
                     long lastDesktopAttempt = -3000;
+                    string lastDesktopReason = "";
+                    bool playbackSeen = false;
                     while (true)
                     {
-                        var action = policy.Tick(clock.ElapsedMilliseconds, ready.WaitOne(0), process.HasExited);
+                        var desktop = InputDesktopState.Read();
+                        if (lastDesktopReason != desktop.Reason)
+                        {
+                            lastDesktopReason = desktop.Reason;
+                            Log("input-desktop elapsed-ms=" + clock.ElapsedMilliseconds + " state=" + desktop.Reason);
+                        }
+                        bool started = playback.WaitOne(0);
+                        if (started && !playbackSeen) { playbackSeen = true; Log("playback-confirmed elapsed-ms=" + clock.ElapsedMilliseconds); }
+                        var action = policy.Tick(clock.ElapsedMilliseconds, ready.WaitOne(0), started, desktop.CanPresent, process.HasExited);
                         if (action.StartDesktop && !preview) { EnsureDesktop(); desktopStarted = true; lastDesktopAttempt = clock.ElapsedMilliseconds; }
                         if (desktopStarted && !preview && GetShellWindow() == IntPtr.Zero && clock.ElapsedMilliseconds - lastDesktopAttempt >= 3000)
                         { EnsureDesktop(); lastDesktopAttempt = clock.ElapsedMilliseconds; }

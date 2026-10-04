@@ -49,6 +49,8 @@ internal static class IntegrationChecks
             var report = JsonSerializer.Deserialize<WinBootVideo.PreviewReceipt>(File.ReadAllText(receipt), Settings.JsonOptions)!;
             check(playback.ExitCode == 0 && report.Opened && report.PlaybackAdvanced && report.Succeeded, "真实 WPF 视频加载、播放与退出");
 
+            await VisibilityGateChecks.RunIsolated(output, check);
+
             string corrupt = Path.Combine(work, "broken.mp4"); File.WriteAllText(corrupt, "This is not a video.");
             settings.VideoPath = corrupt; new SettingsStore(paths).Write(settings);
             File.Delete(receipt);

@@ -15,6 +15,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using WinBootVideo.Core;
+using WinBootVideo.Shared;
 using Forms = System.Windows.Forms;
 
 namespace WinBootVideo;
@@ -25,6 +26,9 @@ public sealed class PreviewReceipt
     public bool PlaybackAdvanced { get; set; }
     public bool Succeeded { get; set; }
     public bool ScreenCoverageVerified { get; set; }
+    public bool InputDesktopConfirmed { get; set; }
+    public long WaitingForDesktopMilliseconds { get; set; }
+    public double PlaybackStartPositionMilliseconds { get; set; }
     public string VideoSha256 { get; set; } = "";
     public string Message { get; set; } = "";
 }
@@ -37,14 +41,21 @@ public sealed class PlayerWindow : Window
     private readonly List<Window> masks = new();
     private readonly DispatcherTimer timer;
     private readonly Stopwatch lifetime = Stopwatch.StartNew();
+    private readonly Func<bool>? visibilityProbe;
+    private long playbackStartedAt = -1;
+    private long interactiveSince = -1;
+    private volatile bool overlayReady;
+    private string lastDesktopReason = "";
+    private const long DesktopWaitMilliseconds = 15 * 60 * 1000;
     private readonly PreviewReceipt receipt = new();
     private bool finishing;
     private bool begun;
     private volatile bool stopped;
     private readonly bool windowed;
-    public PlayerWindow(string[] args, AppPaths paths)
+    public PlayerWindow(string[] args, AppPaths paths, Func<bool>? visibilityProbe = null)
     {
         this.args = args; this.paths = paths;
+        this.visibilityProbe = visibilityProbe;
         settings = JsonSerializer.Deserialize<Settings>(File.ReadAllText(Arguments.Value(args, "--config") ?? paths.SettingsFile), Settings.JsonOptions) ?? throw new InvalidDataException("配置为空。");
         settings.Validate(); receipt.VideoSha256 = settings.VideoSha256;
         windowed = Arguments.Has(args, "--windowed");
@@ -62,6 +73,7 @@ public sealed class PlayerWindow : Window
         {
             if (media.NaturalVideoWidth <= 0 || media.NaturalVideoHeight <= 0) { _ = FinishAsync(30, "文件没有可解码的视频轨道。"); return; }
             receipt.Opened = true;
+            LogTiming("media-opened position-ms=" + media.Position.TotalMilliseconds.ToString("F0", System.Globalization.CultureInfo.InvariantCulture));
         };
         media.MediaFailed += (_, failure) => { App.Log(paths, failure.ErrorException); _ = FinishAsync(30, "解码失败：" + failure.ErrorException.Message); };
         media.MediaEnded += (_, _) => { receipt.PlaybackAdvanced |= media.Position.TotalMilliseconds > 100; _ = FinishAsync(0, "播放完成。"); };
@@ -69,9 +81,34 @@ public sealed class PlayerWindow : Window
         timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
         timer.Tick += (_, _) =>
         {
+            if (finishing) return;
+            if (!overlayReady)
+            {
+                if (lifetime.Elapsed.TotalSeconds >= settings.StartupTimeoutSeconds) _ = FinishAsync(31, "启动遮罩超时。");
+                return;
+            }
+            bool canPresent = CanPresent(out string reason);
+            if (Interlocked.Read(ref playbackStartedAt) < 0)
+            {
+                if (reason != lastDesktopReason)
+                {
+                    lastDesktopReason = reason;
+                    LogTiming("waiting-for-input-desktop " + reason + " position-ms=0");
+                }
+                if (!canPresent) interactiveSince = -1;
+                else
+                {
+                    if (interactiveSince < 0) interactiveSince = lifetime.ElapsedMilliseconds;
+                    if (lifetime.ElapsedMilliseconds - interactiveSince >= 300) StartVisiblePlayback();
+                }
+                if (Interlocked.Read(ref playbackStartedAt) < 0 && lifetime.ElapsedMilliseconds >= DesktopWaitMilliseconds + settings.StartupTimeoutSeconds * 1000L)
+                    _ = FinishAsync(31, "等待登录桌面超过 15 分钟，跳过本次动画。");
+                return;
+            }
+            if (!canPresent) { _ = FinishAsync(31, "播放期间离开登录桌面，跳过本次动画。"); return; }
             receipt.PlaybackAdvanced |= receipt.Opened && media.Position.TotalMilliseconds > 100;
-            if (!receipt.Opened && lifetime.Elapsed.TotalSeconds >= settings.StartupTimeoutSeconds) _ = FinishAsync(31, "视频加载超时。");
-            if (lifetime.Elapsed.TotalSeconds >= settings.MaxDurationSeconds - settings.FadeOutMilliseconds / 1000.0 - 0.4) _ = FinishAsync(31, "达到总等待上限。请剪短视频。");
+            if (!receipt.Opened && PlaybackElapsedSeconds >= settings.StartupTimeoutSeconds) _ = FinishAsync(31, "视频加载超时。");
+            if (PlaybackElapsedSeconds >= settings.MaxDurationSeconds - settings.FadeOutMilliseconds / 1000.0 - 0.4) _ = FinishAsync(31, "达到播放等待上限。请剪短视频。");
         };
         Closing += (_, e) => { if (!stopped) { e.Cancel = true; _ = FinishAsync(2, "用户关闭预览。"); } };
         StartGuardian();
@@ -103,24 +140,70 @@ public sealed class PlayerWindow : Window
                 receipt.ScreenCoverageVerified &= masks.Zip(Forms.Screen.AllScreens.Where(s => s.DeviceName != selected.DeviceName)).All(pair => Covers(pair.First, pair.Second));
             if (!receipt.ScreenCoverageVerified) { await FinishAsync(30, "无法完整覆盖所选屏幕，请检查显示设置。"); return; }
         }
-        // ContentRendered means the opaque window is ready; it does not claim a decoded video frame.
+        // Signal the mask first so Explorer can prepare behind it and Winlogon can
+        // leave its desktop. Rendering here does not establish user visibility.
+        overlayReady = true;
+        SignalHost("Ready");
+        LogTiming("overlay-rendered mode=" + (Arguments.Has(args, "--preview") ? "preview" : "login"));
+        timer.Start();
+    }
+    private bool CanPresent(out string reason)
+    {
+        if (visibilityProbe != null) { bool result = visibilityProbe(); reason = result ? "test-input-active" : "test-input-inactive"; return result; }
+        var state = InputDesktopState.Read(); reason = state.Reason; return state.CanPresent;
+    }
+    private double PlaybackElapsedSeconds
+    {
+        get
+        {
+            long start = Interlocked.Read(ref playbackStartedAt);
+            return start < 0 ? 0 : (Stopwatch.GetTimestamp() - start) / (double)Stopwatch.Frequency;
+        }
+    }
+    private void StartVisiblePlayback()
+    {
+        if (finishing || Interlocked.Read(ref playbackStartedAt) >= 0) return;
+        Activate(); Focus();
+        if (!CanPresent(out _)) { interactiveSince = -1; return; }
+        receipt.InputDesktopConfirmed = true;
+        receipt.WaitingForDesktopMilliseconds = lifetime.ElapsedMilliseconds;
+        media.Source = new Uri(settings.VideoPath, UriKind.Absolute);
+        media.Position = TimeSpan.Zero;
+        receipt.PlaybackStartPositionMilliseconds = media.Position.TotalMilliseconds;
+        Interlocked.Exchange(ref playbackStartedAt, Stopwatch.GetTimestamp());
+        LogTiming("playback-start input-confirmed=true position-ms=" + receipt.PlaybackStartPositionMilliseconds.ToString("F0", System.Globalization.CultureInfo.InvariantCulture));
+        SignalHost("Playback");
+        media.Play();
+    }
+    private void SignalHost(string phase)
+    {
         string? token = Arguments.Value(args, "--token");
-        if (token != null) { using var ready = EventWaitHandle.OpenExisting(@"Local\WinBootVideo.Ready." + token); ready.Set(); }
-        Activate(); Focus(); timer.Start();
-        media.Source = new Uri(settings.VideoPath, UriKind.Absolute); media.Play();
+        if (token == null) return;
+        using var ready = EventWaitHandle.OpenExisting(@"Local\WinBootVideo." + phase + "." + token);
+        ready.Set();
+    }
+    private void LogTiming(string message)
+    {
+        try
+        {
+            Directory.CreateDirectory(paths.LogDirectory);
+            File.AppendAllText(Path.Combine(paths.LogDirectory, "playback-timing.log"), DateTime.Now.ToString("s") + " pid=" + Process.GetCurrentProcess().Id + " elapsed-ms=" + lifetime.ElapsedMilliseconds + " " + message + Environment.NewLine);
+        }
+        catch { }
     }
     private async Task FinishAsync(int exitCode, string message)
     {
         if (finishing) return;
         finishing = true; timer.Stop();
         receipt.PlaybackAdvanced |= receipt.Opened && media.Position.TotalMilliseconds > 100;
+        LogTiming("playback-exit code=" + exitCode + " position-ms=" + media.Position.TotalMilliseconds.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + " reason=" + message);
         try
         {
             media.Pause(); // Hold the last decoded frame during the transition.
             if (!Arguments.Has(args, "--preview") && exitCode is 0 or 2)
             {
                 var wait = Stopwatch.StartNew();
-                while (GetShellWindow() == IntPtr.Zero && wait.Elapsed.TotalSeconds < 2 && lifetime.Elapsed.TotalSeconds < settings.MaxDurationSeconds - 1) await Task.Delay(80);
+                while (GetShellWindow() == IntPtr.Zero && wait.Elapsed.TotalSeconds < 2 && PlaybackElapsedSeconds < settings.MaxDurationSeconds - 1) await Task.Delay(80);
             }
             if (exitCode is 0 or 2 && settings.FadeOutMilliseconds > 0)
             {
@@ -157,7 +240,12 @@ public sealed class PlayerWindow : Window
                 if (parentId > 0) parent = Process.GetProcessById(parentId);
                 while (!stopped)
                 {
-                    if ((parent != null && parent.HasExited) || lifetime.Elapsed.TotalSeconds > settings.MaxDurationSeconds + 2) Environment.Exit(31);
+                    bool expired = !overlayReady
+                        ? lifetime.Elapsed.TotalSeconds > settings.StartupTimeoutSeconds + 2
+                        : Interlocked.Read(ref playbackStartedAt) < 0
+                            ? lifetime.ElapsedMilliseconds > DesktopWaitMilliseconds + settings.StartupTimeoutSeconds * 1000L + 2000
+                            : PlaybackElapsedSeconds > settings.MaxDurationSeconds + 2;
+                    if ((parent != null && parent.HasExited) || expired) Environment.Exit(31);
                     Thread.Sleep(200);
                 }
             }
