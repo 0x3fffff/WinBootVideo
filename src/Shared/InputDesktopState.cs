@@ -23,6 +23,13 @@ namespace WinBootVideo.Shared
 
         public static InputDesktopState Read()
         {
+            var input = ReadInputDesktop();
+            if (!input.CanPresent) return input;
+            return ReadConnectionState();
+        }
+        // Watchdog threads use the local USER query without a synchronous WTS RPC.
+        public static InputDesktopState ReadInputDesktop()
+        {
             // This borrowed handle must not be passed to CloseDesktop.
             IntPtr desktop = GetThreadDesktop(GetCurrentThreadId());
             if (desktop == IntPtr.Zero)
@@ -36,7 +43,10 @@ namespace WinBootVideo.Shared
                 return new InputDesktopState(false, "input-desktop-invalid-buffer");
             if (receivingInput == 0)
                 return new InputDesktopState(false, "own-desktop-not-input");
-
+            return new InputDesktopState(true, "input-desktop-active");
+        }
+        private static InputDesktopState ReadConnectionState()
+        {
             // WTS can be unavailable early in startup. UOI_IO remains the primary
             // local-console visibility check; a successful WTS result additionally
             // prevents consuming playback in a disconnected or inactive session.

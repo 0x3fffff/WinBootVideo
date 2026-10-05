@@ -11,10 +11,13 @@ $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $fixture = Join-Path $PSScriptRoot 'artifacts\HungPlayer.exe'
 & $compiler /nologo /target:winexe /platform:x64 "/out:$fixture" (Join-Path $PSScriptRoot 'tests\fixtures\HungPlayer.cs')
 if ($LASTEXITCODE -ne 0) { throw '验证夹具编译失败。' }
+$deferredFixture = Join-Path $PSScriptRoot 'artifacts\DeferredReadyPlayer.exe'
+& $compiler /nologo /target:winexe /platform:x64 "/out:$deferredFixture" (Join-Path $PSScriptRoot 'tests\fixtures\DeferredReadyPlayer.cs')
+if ($LASTEXITCODE -ne 0) { throw '冷启动延迟就绪夹具编译失败。' }
 $env:DOTNET_CLI_HOME = Join-Path $PSScriptRoot '.cli'
 $env:MSBuildEnableWorkloadResolver = 'false'
 $sdk = Join-Path $env:ProgramFiles 'dotnet\dotnet.exe'
 & $sdk restore (Join-Path $PSScriptRoot 'tests\WinBootVideo.Checks.csproj') --configfile (Join-Path $PSScriptRoot 'NuGet.Config')
 if ($LASTEXITCODE -ne 0) { throw '验证项目还原失败。' }
-& $sdk run --project (Join-Path $PSScriptRoot 'tests\WinBootVideo.Checks.csproj') -c Release --no-restore -- $bundle $FFmpegDirectory $fixture
+& $sdk run --project (Join-Path $PSScriptRoot 'tests\WinBootVideo.Checks.csproj') -c Release --no-restore -- $bundle $FFmpegDirectory $fixture $deferredFixture
 if ($LASTEXITCODE -ne 0) { throw '集成验证失败。' }

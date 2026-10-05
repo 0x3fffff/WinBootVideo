@@ -44,9 +44,10 @@ public sealed class PlayerWindow : Window
     private readonly Func<bool>? visibilityProbe;
     private long playbackStartedAt = -1;
     private long interactiveSince = -1;
+    private long coldInteractiveSince = -1;
     private volatile bool overlayReady;
     private string lastDesktopReason = "";
-    private const long DesktopWaitMilliseconds = 15 * 60 * 1000;
+    private const long DesktopWaitMilliseconds = StartupLimits.InputDesktopWaitMilliseconds;
     private readonly PreviewReceipt receipt = new();
     private bool finishing;
     private bool begun;
@@ -56,8 +57,10 @@ public sealed class PlayerWindow : Window
     {
         this.args = args; this.paths = paths;
         this.visibilityProbe = visibilityProbe;
+        LogTiming("constructor-enter");
         settings = JsonSerializer.Deserialize<Settings>(File.ReadAllText(Arguments.Value(args, "--config") ?? paths.SettingsFile), Settings.JsonOptions) ?? throw new InvalidDataException("配置为空。");
         settings.Validate(); receipt.VideoSha256 = settings.VideoSha256;
+        LogTiming("settings-loaded");
         windowed = Arguments.Has(args, "--windowed");
         Title = "WinBootVideo · Esc / 空格跳过";
         Background = Brushes.Black;
@@ -68,7 +71,9 @@ public sealed class PlayerWindow : Window
         Content = media;
         var screen = Forms.Screen.AllScreens.FirstOrDefault(s => s.DeviceName == settings.ScreenDevice) ?? Forms.Screen.PrimaryScreen ?? Forms.Screen.AllScreens[0];
         if (!windowed) PositionOnScreen(this, screen);
-        ContentRendered += (_, _) => BeginPlayback(screen);
+        SourceInitialized += (_, _) => LogTiming("window-handle-ready");
+        Loaded += (_, _) => LogTiming("window-loaded");
+        ContentRendered += (_, _) => { LogTiming("window-content-rendered"); BeginPlayback(screen); };
         media.MediaOpened += (_, _) =>
         {
             if (media.NaturalVideoWidth <= 0 || media.NaturalVideoHeight <= 0) { _ = FinishAsync(30, "文件没有可解码的视频轨道。"); return; }
@@ -82,12 +87,19 @@ public sealed class PlayerWindow : Window
         timer.Tick += (_, _) =>
         {
             if (finishing) return;
+            bool canPresent = CanPresent(out string reason);
             if (!overlayReady)
             {
-                if (lifetime.Elapsed.TotalSeconds >= settings.StartupTimeoutSeconds) _ = FinishAsync(31, "启动遮罩超时。");
+                if (!canPresent) coldInteractiveSince = -1;
+                else
+                {
+                    if (coldInteractiveSince < 0) coldInteractiveSince = lifetime.ElapsedMilliseconds;
+                    if (lifetime.ElapsedMilliseconds - coldInteractiveSince >= StartupLimits.ColdStartMilliseconds)
+                        _ = FinishAsync(31, "桌面可见后播放器仍未在 30 秒内启动，跳过本次动画。");
+                }
+                if (lifetime.ElapsedMilliseconds >= DesktopWaitMilliseconds) _ = FinishAsync(31, "等待登录桌面超过 15 分钟，跳过本次动画。");
                 return;
             }
-            bool canPresent = CanPresent(out string reason);
             if (Interlocked.Read(ref playbackStartedAt) < 0)
             {
                 if (reason != lastDesktopReason)
@@ -111,6 +123,8 @@ public sealed class PlayerWindow : Window
             if (PlaybackElapsedSeconds >= settings.MaxDurationSeconds - settings.FadeOutMilliseconds / 1000.0 - 0.4) _ = FinishAsync(31, "达到播放等待上限。请剪短视频。");
         };
         Closing += (_, e) => { if (!stopped) { e.Cancel = true; _ = FinishAsync(2, "用户关闭预览。"); } };
+        timer.Start();
+        LogTiming("constructor-complete screens=" + Forms.Screen.AllScreens.Length);
         StartGuardian();
     }
     private async void BeginPlayback(Forms.Screen selected)
@@ -124,7 +138,7 @@ public sealed class PlayerWindow : Window
             {
                 var mask = new Window { Background = Brushes.Black, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false, Topmost = true, ShowActivated = false };
                 var ready = new TaskCompletionSource();
-                mask.ContentRendered += (_, _) => ready.TrySetResult();
+                mask.ContentRendered += (_, _) => { LogTiming("secondary-content-rendered"); ready.TrySetResult(); };
                 rendered.Add(ready.Task);
                 mask.Closing += (_, e) => { if (!stopped) { e.Cancel = true; _ = FinishAsync(2, "用户关闭预览。"); } };
                 mask.PreviewKeyDown += (_, key) => { if (key.Key is Key.Escape or Key.Space) _ = FinishAsync(2, "用户跳过。"); };
@@ -235,13 +249,20 @@ public sealed class PlayerWindow : Window
         var thread = new Thread(() =>
         {
             Process? parent = null;
+            long coldVisibleAt = -1;
             try
             {
                 if (parentId > 0) parent = Process.GetProcessById(parentId);
                 while (!stopped)
                 {
+                    if (!overlayReady)
+                    {
+                        bool active = InputDesktopState.ReadInputDesktop().CanPresent;
+                        if (!active) coldVisibleAt = -1;
+                        else if (coldVisibleAt < 0) coldVisibleAt = lifetime.ElapsedMilliseconds;
+                    }
                     bool expired = !overlayReady
-                        ? lifetime.Elapsed.TotalSeconds > settings.StartupTimeoutSeconds + 2
+                        ? (coldVisibleAt >= 0 && lifetime.ElapsedMilliseconds - coldVisibleAt > StartupLimits.ColdStartMilliseconds + 2000) || lifetime.ElapsedMilliseconds > DesktopWaitMilliseconds + 2000
                         : Interlocked.Read(ref playbackStartedAt) < 0
                             ? lifetime.ElapsedMilliseconds > DesktopWaitMilliseconds + settings.StartupTimeoutSeconds * 1000L + 2000
                             : PlaybackElapsedSeconds > settings.MaxDurationSeconds + 2;

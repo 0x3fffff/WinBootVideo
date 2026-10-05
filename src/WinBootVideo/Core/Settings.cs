@@ -30,7 +30,7 @@ public sealed class Settings
         if (FadeOutMilliseconds < 0 || FadeOutMilliseconds > 3000) throw new InvalidDataException("淡出须在 0–3000 毫秒之间。");
         if (MaxDurationSeconds < 5 || MaxDurationSeconds > 90) throw new InvalidDataException("总等待上限须在 5–90 秒之间。");
         if (StartupTimeoutSeconds < 2 || StartupTimeoutSeconds > 15 || StartupTimeoutSeconds >= MaxDurationSeconds)
-            throw new InvalidDataException("初始化等待须在 2–15 秒之间，并小于总等待上限。");
+            throw new InvalidDataException("视频加载等待须在 2–15 秒之间，并小于播放等待上限。");
         if (requireVideo) ValidateLocalVideo(VideoPath);
     }
     public static void ValidateLocalVideo(string path)

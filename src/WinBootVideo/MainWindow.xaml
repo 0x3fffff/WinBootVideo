@@ -1,4 +1,4 @@
-<Window x:Class="WinBootVideo.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="WinBootVideo · 登录动画 (0.1.2)" Width="1100" Height="810" MinWidth="1000" MinHeight="740" WindowStartupLocation="CenterScreen" Background="#F5F7FA" AllowDrop="True" Drop="OnDrop" DragOver="OnDragOver">
+<Window x:Class="WinBootVideo.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="WinBootVideo · 登录动画 (0.1.3)" Width="1100" Height="810" MinWidth="1000" MinHeight="740" WindowStartupLocation="CenterScreen" Background="#F5F7FA" AllowDrop="True" Drop="OnDrop" DragOver="OnDragOver">
   <Grid Background="#F5F7FA">
     <Grid.ColumnDefinitions><ColumnDefinition Width="184"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
     <Border Background="#ECF1F7" BorderBrush="#DFE5ED" BorderThickness="0,0,1,0">
@@ -12,7 +12,7 @@
         <Border Grid.Row="1" Margin="-8,34,-4,0" Background="#DCE9F7" CornerRadius="6" Padding="13,12"><TextBlock Text="▶  登录动画" Foreground="#105EA8" FontWeight="SemiBold"/></Border>
         <StackPanel Grid.Row="3">
           <TextBlock Text="WINDOWS 11" FontSize="11" FontWeight="SemiBold" Foreground="#657487"/>
-          <TextBlock Text="个人使用初版 0.1.2" Style="{StaticResource Small}" Margin="0,4,0,16"/>
+          <TextBlock Text="个人使用初版 0.1.3" Style="{StaticResource Small}" Margin="0,4,0,16"/>
           <Button Content="视频要求与恢复说明" Click="HelpClick" Padding="8,9" FontSize="11"/>
         </StackPanel>
       </Grid>
@@ -65,8 +65,8 @@
                 <TextBlock Text="退出淡出（毫秒）" Style="{StaticResource Label}"/><TextBox x:Name="FadeText" Text="650" Margin="0,0,0,16"/>
                 <TextBlock Text="播放等待上限（秒）" Style="{StaticResource Label}"/><TextBox x:Name="MaximumText" Text="45"/>
                 <TextBlock Text="桌面可见后计时，包括加载、播放及淡出。输入密码的时间不计入。" Style="{StaticResource Small}" Margin="0,7,0,18"/>
-                <TextBlock Text="初始化等待（秒）" Style="{StaticResource Label}"/><TextBox x:Name="StartupText" Text="8"/>
-                <TextBlock Text="启动遮罩超时后跳过动画。" Style="{StaticResource Small}" Margin="0,7,0,0"/>
+                <TextBlock Text="视频加载等待（秒）" Style="{StaticResource Label}"/><TextBox x:Name="StartupText" Text="8"/>
+                <TextBlock Text="加载超时后进入桌面。播放器冷启动另有 30 秒上限，输入密码的时间不计入。" Style="{StaticResource Small}" Margin="0,7,0,0"/>
               </StackPanel>
             </Border>
             <Border Background="#EAF2FC" CornerRadius="8" Padding="15" Margin="0,16,0,0">

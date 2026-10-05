@@ -26,9 +26,11 @@ public partial class App : Application
         {
             if (Arguments.Has(e.Args, "--player"))
             {
+                LogPhase(paths, "app-started");
                 var player = new PlayerWindow(e.Args, paths);
                 MainWindow = player;
                 player.Show();
+                LogPhase(paths, "window-show-returned");
                 return;
             }
             var window = new MainWindow(paths);
@@ -65,6 +67,15 @@ public partial class App : Application
     public static void Log(AppPaths paths, Exception exception)
     {
         try { Directory.CreateDirectory(paths.LogDirectory); File.AppendAllText(Path.Combine(paths.LogDirectory, "player.log"), DateTime.Now.ToString("s") + " " + exception + Environment.NewLine); } catch { }
+    }
+    private static void LogPhase(AppPaths paths, string phase)
+    {
+        try
+        {
+            Directory.CreateDirectory(paths.LogDirectory);
+            File.AppendAllText(Path.Combine(paths.LogDirectory, "playback-timing.log"), DateTime.Now.ToString("s") + " pid=" + System.Diagnostics.Process.GetCurrentProcess().Id + " startup-phase=" + phase + Environment.NewLine);
+        }
+        catch { }
     }
 }
 public static class Arguments

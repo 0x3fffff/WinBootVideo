@@ -20,6 +20,18 @@ namespace WinBootVideo.Host
         private static volatile bool supervisorRunning;
         private static volatile bool flowFinished;
         private static int startupLimitMilliseconds = 8000;
+        private static Process explorerStarted;
+        private static readonly DesktopLaunchCoordinator desktopLaunch = new DesktopLaunchCoordinator(
+            delegate { return GetShellWindow() != IntPtr.Zero; },
+            delegate
+            {
+                if (explorerStarted != null) explorerStarted.Dispose();
+                string explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+                explorerStarted = Process.Start(new ProcessStartInfo(explorer) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(explorer) });
+                if (explorerStarted == null) throw new IOException("Explorer launch did not return a process.");
+                Log("Explorer requested in current session. pid=" + explorerStarted.Id);
+            },
+            delegate { return lifetime.ElapsedMilliseconds; });
         private static string Argument(string[] args, string name, string fallback)
         {
             int index = Array.IndexOf(args, name);
@@ -104,7 +116,7 @@ namespace WinBootVideo.Host
                 {
                     if (process == null) throw new IOException("Cannot start player.");
                     Log("player-start: " + process.Id);
-                    Log("login-flow mode=" + (preview ? "preview" : "login") + " version=0.1.2");
+                    Log("login-flow mode=" + (preview ? "preview" : "login") + " version=0.1.3");
                     supervisorRunning = true;
                     var clock = lifetime;
                     var policy = new SupervisorPolicy(startup * 1000L, total * 1000L);
@@ -112,6 +124,7 @@ namespace WinBootVideo.Host
                     long lastDesktopAttempt = -3000;
                     string lastDesktopReason = "";
                     bool playbackSeen = false;
+                    bool overlaySeen = false;
                     while (true)
                     {
                         var desktop = InputDesktopState.Read();
@@ -122,7 +135,9 @@ namespace WinBootVideo.Host
                         }
                         bool started = playback.WaitOne(0);
                         if (started && !playbackSeen) { playbackSeen = true; Log("playback-confirmed elapsed-ms=" + clock.ElapsedMilliseconds); }
-                        var action = policy.Tick(clock.ElapsedMilliseconds, ready.WaitOne(0), started, desktop.CanPresent, process.HasExited);
+                        bool rendered = ready.WaitOne(0);
+                        if (rendered && !overlaySeen) { overlaySeen = true; Log("overlay-confirmed elapsed-ms=" + clock.ElapsedMilliseconds); }
+                        var action = policy.Tick(clock.ElapsedMilliseconds, rendered, started, desktop.CanPresent, process.HasExited);
                         if (action.StartDesktop && !preview) { EnsureDesktop(); desktopStarted = true; lastDesktopAttempt = clock.ElapsedMilliseconds; }
                         if (desktopStarted && !preview && GetShellWindow() == IntPtr.Zero && clock.ElapsedMilliseconds - lastDesktopAttempt >= 3000)
                         { EnsureDesktop(); lastDesktopAttempt = clock.ElapsedMilliseconds; }
@@ -153,10 +168,7 @@ namespace WinBootVideo.Host
         {
             try
             {
-                if (GetShellWindow() != IntPtr.Zero) return;
-                string explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
-                Process.Start(new ProcessStartInfo(explorer) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(explorer) });
-                Log("Explorer requested in current session.");
+                desktopLaunch.Ensure();
             }
             catch (Exception ex) { Log("Explorer fallback failed: " + ex.Message); }
         }

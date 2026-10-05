@@ -7,12 +7,27 @@ using WinBootVideo.Host;
 using WinBootVideo.Shared;
 
 int checks = 0;
+// A red regression is reported through stderr / exit code, never a desktop dialog.
+Native.SetErrorMode(0x0003);
+Console.OutputEncoding = new System.Text.UTF8Encoding(false);
 void Check(bool condition, string name) { if (!condition) throw new Exception("FAIL: " + name); checks++; Console.WriteLine("PASS: " + name); }
 void Throws(Action action, string name) { bool failed = false; try { action(); } catch { failed = true; } Check(failed, name); }
 string work = Path.Combine(Path.GetTempPath(), "WinBootVideo-checks-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(work);
 try
 {
+    if (args.Length == 1 && args[0] == "--desktop-launch-only")
+    {
+        DesktopLaunchChecks.Run(Check);
+        Console.WriteLine($"{checks} desktop launch checks passed. Injected desktop and own-process probes only.");
+        return;
+    }
+    if (args.Length == 3 && args[0] == "--cold-start-only")
+    {
+        await ColdStartChecks.Run(args[1], args[2], Check);
+        Console.WriteLine($"{checks} cold start checks passed. Preview Host only; no real Shell launch or registry writes.");
+        return;
+    }
     if (args.Length == 2 && args[0] == "--visibility-gate-only")
     {
         await VisibilityGateChecks.Run(args[1], Check);
@@ -34,9 +49,13 @@ try
     var selectedSettings = new Settings { VideoPath = @"D:\桌面\intro.mp4", VideoSha256 = new string('a', 64), VerifiedVideoSha256 = new string('b', 64), Volume = .71, FadeOutMilliseconds = 980, MaxDurationSeconds = 52, StartupTimeoutSeconds = 7, CoverOtherScreens = false, ScreenDevice = "DISPLAY2", FfmpegPath = @"E:\tools\ffmpeg.exe", FfprobePath = @"E:\tools\ffprobe.exe" };
     Check(JsonSerializer.Serialize(selectedSettings, Settings.JsonOptions) == JsonSerializer.Serialize(selectedSettings.Copy(), Settings.JsonOptions), "Settings.Copy 保留所选视频路径及全部非默认设置");
     var timeout = new SupervisorPolicy(8000, 45000);
+    timeout.Tick(0, false, false, true, false);
     Check(!timeout.Tick(7999, false, false, true, false).StartDesktop, "未就绪时不提前启动桌面");
     var expired = timeout.Tick(8000, false, false, true, false);
-    Check(expired.StartDesktop && expired.KillPlayer && expired.Finished, "初始化超时：放行桌面并终止自己的播放器");
+    Check(expired.StartDesktop && !expired.KillPlayer && !expired.Finished, "初始化软期限放行桌面，冷启动的播放器仍保留独立预算");
+    Check(!timeout.Tick(29999, false, false, true, false).KillPlayer, "可见后的独立三十秒冷启动期限到达前保留播放器");
+    var coldExpired = timeout.Tick(30000, false, false, true, false);
+    Check(coldExpired.KillPlayer && coldExpired.Finished && coldExpired.Reason == "cold-start-timeout", "冷启动期限到达仍未就绪时清理自己的播放器");
     var ready = new SupervisorPolicy(8000, 45000);
     Check(ready.Tick(400, true, false, true, false).StartDesktop, "遮罩就绪后才启动桌面");
     Check(!ready.Tick(500, true, true, true, false).StartDesktop, "仅请求一次启动");
@@ -59,6 +78,8 @@ try
     interrupted.Tick(0, true, true, true, false);
     var left = interrupted.Tick(100, true, true, false, false);
     Check(left.KillPlayer && left.Reason == "input-desktop-left", "播放后离开输入桌面立即清理，不在下一次解锁续播");
+    ColdStartChecks.RunPolicy(Check);
+    DesktopLaunchChecks.Run(Check);
     string sessionKey = LogonSessionIdentity.Read();
     Check(sessionKey == LogonSessionIdentity.Read(), "真实当前登录会话标识稳定，只读访问令牌与会话时间");
     Check(LogonSessionIdentity.Key(1, 0, 100) != LogonSessionIdentity.Key(1, 0, 200), "跨重启 LUID 复用时，不误跳过新的登录");
@@ -109,15 +130,25 @@ try
     Throws(() => MediaTools.ParseProbe("""{"streams":[{"codec_type":"audio","codec_name":"aac"}]}"""), "拒绝纯音频输入");
     var conversion = MediaTools.ConversionArguments("C:\\video & quote\".mp4", "C:\\new file.mp4", 15, true, true);
     Check(conversion.Contains("C:\\video & quote\".mp4") && conversion.Contains("-an") && conversion.Contains("-n") && conversion.Any(x => x.Contains("tonemap=hable") && x.Contains("format=yuv420p")), "转码路径作为单独参数、拒绝覆盖、HDR 转 SDR");
-    if (args.Length == 3)
+    if (args.Length == 3 || args.Length == 4)
     {
         await IntegrationChecks.Run(args[0], args[1], args[2], Check);
         await HiddenDesktopChecks.Run(args[0], Check);
         await GuiFlowChecks.Run(args[0], Check);
+        if (args.Length == 4) await ColdStartChecks.Run(args[0], args[3], Check);
     }
     Console.WriteLine($"{checks} checks passed. No real registry writes.");
 }
-finally { Directory.Delete(work, true); }
+catch (Exception ex)
+{
+    Console.Error.WriteLine(ex);
+    Environment.ExitCode = 1;
+}
+finally
+{
+    try { Directory.Delete(work, true); }
+    catch (Exception ex) { Console.Error.WriteLine("Test cleanup failed: " + ex); Environment.ExitCode = 1; }
+}
 
 sealed class FakeRegistry : IUserShellRegistry
 {
@@ -131,6 +162,7 @@ sealed class FakeRegistry : IUserShellRegistry
 }
 static class Native
 {
+    [DllImport("kernel32.dll")] public static extern uint SetErrorMode(uint mode);
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr CommandLineToArgvW(string commandLine, out int count);
     [DllImport("kernel32.dll")] public static extern IntPtr LocalFree(IntPtr memory);
 }

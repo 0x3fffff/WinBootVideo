@@ -81,7 +81,7 @@ public partial class MainWindow : Window
         draft.Volume = VolumeSlider.Value / 100;
         draft.FadeOutMilliseconds = ParseInteger(FadeText.Text, "淡出");
         draft.MaxDurationSeconds = ParseInteger(MaximumText.Text, "等待上限");
-        draft.StartupTimeoutSeconds = ParseInteger(StartupText.Text, "初始化等待");
+        draft.StartupTimeoutSeconds = ParseInteger(StartupText.Text, "视频加载等待");
         draft.ScreenDevice = (ScreenChoice.SelectedItem as ScreenOption)?.Device ?? "";
         draft.CoverOtherScreens = CoverOthers.IsChecked == true;
         draft.Validate();
@@ -175,7 +175,7 @@ public partial class MainWindow : Window
             if (await SettingsStore.HashAsync(settings.VideoPath, token) != settings.VideoSha256) throw new IOException("视频发生变化，请重新预览。");
             settings.VerifiedVideoSha256 = settings.VideoSha256;
             store.Write(settings);
-            StatusText.Text = "预览成功。请确认画面和声音符合预期，然后点击“启用登录动画”。";
+            StatusText.Text = "预览成功。视频已复制到应用目录，原文件可以删除。确认效果后点击“启用登录动画”。";
         }
         finally { if (File.Exists(receipt)) File.Delete(receipt); }
     });

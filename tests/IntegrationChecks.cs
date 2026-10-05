@@ -77,15 +77,15 @@ internal static class IntegrationChecks
                 info.Environment["WINBOOTVIDEO_FIXTURE_READY"] = ready ? "1" : "0";
                 var timer = Stopwatch.StartNew();
                 using var parent = Process.Start(info)!;
-                using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                double target = ready ? 5 : WinBootVideo.Shared.StartupLimits.ColdStartMilliseconds / 1000d;
+                using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(target + 5));
                 try { await parent.WaitForExitAsync(limit.Token); }
                 catch { parent.Kill(true); throw; }
                 int childId = int.Parse(File.ReadAllText(pidFile));
                 bool childExited;
                 try { using var child = Process.GetProcessById(childId); childExited = child.HasExited; } catch (ArgumentException) { childExited = true; }
-                double target = ready ? 5 : 2;
                 check(parent.ExitCode == 31 && childExited && timer.Elapsed.TotalSeconds >= target && timer.Elapsed.TotalSeconds < target + 3,
-                    ready ? "就绪后卡死：独立宿主按总上限终止自己启动的子进程" : "就绪前卡死：独立宿主按初始化上限终止自己启动的子进程");
+                    ready ? "就绪后卡死：独立宿主按总上限终止自己启动的子进程" : "就绪前卡死：独立宿主按可见后的冷启动期限终止自己启动的子进程");
             }
 
             settings.VideoPath = input; settings.MaxDurationSeconds = 15; settings.StartupTimeoutSeconds = 4;
