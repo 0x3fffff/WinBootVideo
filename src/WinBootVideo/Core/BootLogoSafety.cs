@@ -20,6 +20,7 @@ public sealed class BootLogoEnvironment
     public long? EspFreeBytes { get; set; }
     public string Model { get; set; } = "";
     public string Error { get; set; } = "";
+    public string FirmwareDetails { get; set; } = "";
     public DateTime CheckedUtc { get; set; }
     public List<string> Blockers()
     {
@@ -58,6 +59,30 @@ public static class BootLogoEntry
     public const string WindowsPath = @"\EFI\Microsoft\Boot\bootmgfw.efi";
     public const string LogoPath = @"\EFI\HackBGRT\loader.efi";
     public sealed record Parsed(string Label, string Path, Guid Partition, uint Attributes, byte[][] Nodes);
+    // Diagnostic description only. Labels and partial paths never authorize firmware changes.
+    public static string Describe(byte[] raw)
+    {
+        try
+        {
+            var entry = Parse(raw);
+            string kind = entry.Path.Equals(WindowsPath, StringComparison.OrdinalIgnoreCase) ? "Windows 启动器" :
+                entry.Path.Equals(LogoPath, StringComparison.OrdinalIgnoreCase) ? "HackBGRT 启动器" : "其他 EFI 文件";
+            return Clean(entry.Label) + " · " + kind + "\n  路径：" + Clean(entry.Path) + "\n  分区：" + entry.Partition;
+        }
+        catch (InvalidDataException)
+        {
+            // Device-only / vendor paths may be perfectly normal. Show their bounded metadata,
+            // but keep the unsupported-configuration guard; never classify by the label alone.
+            string label = "名称无法解析";
+            if (raw.Length >= 8 && raw.Length <= 65536)
+            {
+                for (int p = 6; p + 1 < raw.Length && p < 1032; p += 2)
+                    if (raw[p] == 0 && raw[p + 1] == 0) { label = Clean(Encoding.Unicode.GetString(raw, 6, p - 6)); break; }
+            }
+            return label + " · 设备 / 厂商路径或不支持的数据格式（不能仅凭名称认定安全）";
+        }
+    }
+    private static string Clean(string value) => new(value.Select(c => char.IsControl(c) ? ' ' : c).ToArray());
     public static Parsed Parse(byte[] raw)
     {
         if (raw.Length < 12 || raw.Length > 65536) throw new InvalidDataException("EFI 启动项长度无效。");
@@ -138,6 +163,27 @@ public sealed class BootLogoRegistration
         return result;
     }
     public sealed record Plan(ushort Number, ushort WindowsNumber, FirmwareValue OriginalOrder, FirmwareValue WindowsEntry, FirmwareValue NewEntry);
+    public string Inspect()
+    {
+        var order = Order(firmware.Read("BootOrder"));
+        var current = firmware.Read("BootCurrent");
+        ushort? active = current?.Data.Length == 2 ? BitConverter.ToUInt16(current.Data) : null;
+        var numbers = order.Concat(Enumerable.Range(0, 256).Select(i => (ushort)i));
+        if (active != null) numbers = numbers.Append(active.Value);
+        var lines = new List<string> { "只读固件启动项报告", "BootOrder：" + string.Join(" → ", order.Select(Name)),
+            "BootCurrent：" + (active == null ? "未知" : Name(active.Value)), "读取范围：BootOrder、本次 BootCurrent 和 Boot0000–Boot00FF。",
+            "名称仅作说明，不作为安装或删除依据。" };
+        foreach (ushort id in numbers.Distinct())
+        {
+            var value = firmware.Read(Name(id));
+            if (value == null) { if (order.Contains(id)) lines.Add("\n" + Name(id) + "：启动顺序中引用的项缺失"); continue; }
+            lines.Add("\n" + Name(id) + (order.Contains(id) ? "（在启动顺序中）" : "（未列入启动顺序）") +
+                (active == id ? " · 本次启动" : "") + "\n  " + BootLogoEntry.Describe(value.Data) +
+                "\n  数据 SHA-256：" + BootLogoPackage.Hash(value.Data));
+        }
+        lines.Add("\n额外项可能是 USB、网络、厂商功能，也可能是其他系统。当前版本只支持单 Windows 启动项，不能安全确认时停止；请勿删除启动项绕过检查。");
+        return string.Join("\n", lines);
+    }
     public Plan Prepare(Guid partition)
     {
         if (firmware.Read("BootNext") != null) throw new InvalidDataException("已有单次启动设置，请先完成它再检查。");
@@ -153,7 +199,8 @@ public sealed class BootLogoRegistration
             var value = firmware.Read(Name(id));
             if (value == null) throw new InvalidDataException("启动顺序存在缺失项。");
             // Unknown device paths / another OS are deliberately unsupported in the first release.
-            throw new InvalidDataException("检测到额外固件启动项；初版仅支持单 Windows 启动项。请勿删除其他启动项来绕过检查。");
+            throw new InvalidDataException("当前版本尚不支持额外固件启动项 " + Name(id) + "：" + BootLogoEntry.Describe(value.Data) +
+                "\n请查看启动项详情。额外项不一定代表双系统，请勿删除它来绕过检查。");
         }
         ushort? free = null;
         for (ushort id = 0; id < 256; id++)
@@ -162,7 +209,8 @@ public sealed class BootLogoRegistration
             if (value == null) { if (!order.Contains(id) && free == null) free = id; continue; }
             if (id == order[0]) continue;
             // Unreferenced entries might belong to another installation. Fail closed.
-            throw new InvalidDataException("检测到额外固件启动项，无法确认是否为多系统或旧 HackBGRT 安装。");
+            throw new InvalidDataException("当前版本尚不支持未引用的固件启动项 " + Name(id) + "：" + BootLogoEntry.Describe(value.Data) +
+                "\n无法确认是否为厂商功能、其他系统或旧 HackBGRT；请查看详情，不要删除它来绕过检查。");
         }
         if (free == null) throw new InvalidDataException("没有可用的 EFI 启动项槽位。");
         var plan = new Plan(free.Value, order[0], original, windows, new FirmwareValue(7, logo));

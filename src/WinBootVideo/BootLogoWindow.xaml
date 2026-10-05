@@ -3,7 +3,7 @@
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <StackPanel Margin="0,0,0,18">
       <TextBlock Text="开机 Logo" FontSize="26" FontWeight="SemiBold"/>
-      <TextBlock Text="UEFI 启动 Windows 时的静态图片 · 与登录视频独立 · 原厂 Logo 可能先短暂出现" Style="{StaticResource Small}" Margin="0,8,0,0"/>
+      <TextBlock Text="替换 Windows 加载时的静态 Logo（包括厂商 Logo） · 刚通电时的固件 Logo 可能仍短暂出现" Style="{StaticResource Small}" Margin="0,8,0,0"/>
     </StackPanel>
     <ScrollViewer x:Name="LogoScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
       <Grid>
@@ -27,7 +27,10 @@
           <Border Style="{StaticResource Card}" Margin="0,14,0,0"><StackPanel>
             <TextBlock Text="02  检查电脑" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12"/>
             <TextBlock x:Name="HardwareText" Text="尚未进行管理员只读检查。未知状态会阻止安装。" Style="{StaticResource Small}" Margin="0,0,0,12"/>
-            <Button x:Name="ProbeButton" Content="管理员只读检查（UAC）" Click="ProbeClick" HorizontalAlignment="Left"/>
+            <WrapPanel><Button x:Name="ProbeButton" Content="管理员只读检查（UAC）" Click="ProbeClick" Margin="0,0,8,0"/>
+              <Button x:Name="FirmwareDetailsButton" Content="启动项详情" Click="FirmwareDetailsClick" IsEnabled="False"/>
+            </WrapPanel>
+            <TextBlock Text="额外启动项可能是 USB、网络或厂商功能，也可能是其他系统；名称不能作为安全依据。检查后可在详情中查看，不要删除它们绕过检查。" Style="{StaticResource Small}" Margin="0,10,0,0"/>
             <TextBlock Text="仅支持当前 UEFI x64、单 Windows 启动项、单 EFI 系统分区且系统盘未加密。加密、多个启动分区、第三方或未知配置均阻止安装。" Style="{StaticResource Small}" Margin="0,10,0,0"/>
           </StackPanel></Border>
           <Border Style="{StaticResource Card}" Margin="0,14,0,0"><StackPanel>
@@ -66,9 +69,15 @@
         <ProgressBar x:Name="LogoBusy" Height="3" IsIndeterminate="True" Visibility="Collapsed" Margin="0,8,0,0"/>
       </StackPanel>
     </Border>
-    <Grid Grid.Row="3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-      <Button x:Name="InstallLogoButton" Content="04  安装独立 Logo（UAC）" Style="{StaticResource PrimaryButton}" Click="InstallClick" HorizontalAlignment="Left" IsEnabled="False"/>
-      <Button x:Name="RestoreLogoButton" Grid.Column="1" Content="恢复原 Logo（UAC）" Click="RestoreClick" IsEnabled="False"/>
-    </Grid>
+    <StackPanel Grid.Row="3">
+      <Grid Margin="0,0,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <TextBlock x:Name="InstallHint" Style="{StaticResource Small}" MaxHeight="58" TextTrimming="CharacterEllipsis" Margin="0,0,12,0"/>
+        <Button Grid.Column="1" Content="查看安装条件" Click="RequirementsClick" Padding="10,5" MinHeight="30" VerticalAlignment="Center"/>
+      </Grid>
+      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <Button x:Name="InstallLogoButton" Content="04  安装独立 Logo（UAC）" Style="{StaticResource PrimaryButton}" Click="InstallClick" HorizontalAlignment="Left" IsEnabled="False" ToolTipService.ShowOnDisabled="True"/>
+        <Button x:Name="RestoreLogoButton" Grid.Column="1" Content="恢复原 Logo（UAC）" Click="RestoreClick" IsEnabled="False"/>
+      </Grid>
+    </StackPanel>
   </Grid>
 </Window>

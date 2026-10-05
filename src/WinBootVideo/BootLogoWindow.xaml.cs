@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -20,6 +21,7 @@ public partial class BootLogoWindow : Window
     private byte[]? image;
     private string source = "", prepared = "";
     private BootLogoEnvironment? environment;
+    private bool probePassed;
     private bool busy;
     public BootLogoWindow(AppPaths paths, Func<BootLogoRequest, Task<BootLogoResponse>>? executor = null, Func<string, bool>? confirmation = null)
     {
@@ -31,13 +33,34 @@ public partial class BootLogoWindow : Window
     {
         if (!IsInitialized) return;
         ChooseImageButton.IsEnabled = CanvasChoice.IsEnabled = ProbeButton.IsEnabled = !busy;
+        FirmwareDetailsButton.IsEnabled = !busy && !string.IsNullOrEmpty(environment?.FirmwareDetails);
         ExportButton.IsEnabled = !busy && image != null;
         RescueCheck.IsEnabled = TrialCheck.IsEnabled = ShimCheck.IsEnabled = !busy;
-        InstallLogoButton.IsEnabled = !busy && image != null && prepared.Length > 0 && environment?.Blockers().Count == 0 &&
-            (DateTime.UtcNow - environment.CheckedUtc).TotalMinutes <= 10 && RescueCheck.IsChecked == true && TrialCheck.IsChecked == true &&
-            (environment.SecureBoot != true || ShimCheck.IsChecked == true);
+        var missing = InstallationRequirements();
+        InstallLogoButton.IsEnabled = !busy && missing.Count == 0;
+        InstallHint.Text = busy ? "正在执行操作，请等待完成。" : missing.Count == 0 ? "准备完成，可以安装。安装后先单次试启动，Windows Boot Manager 仍是默认。" :
+            "暂不能安装：" + string.Join("；", missing);
+        InstallLogoButton.ToolTip = InstallHint.Text;
         try { RestoreLogoButton.IsEnabled = !busy && BootLogoInstaller.ReadJournal() is { Phase: not "Restored" }; }
         catch { RestoreLogoButton.IsEnabled = false; }
+    }
+    private List<string> InstallationRequirements()
+    {
+        var missing = new List<string>();
+        if (image == null) missing.Add("选择图片并完成转换");
+        if (prepared.Length == 0) missing.Add("导出准备包，保留恢复说明");
+        if (environment == null) missing.Add("完成管理员只读检查");
+        else
+        {
+            var hardware = environment.Blockers(); missing.AddRange(hardware);
+            if (!probePassed && hardware.Count == 0) missing.Add("只读检查未通过，请重新检查并查看启动项详情");
+            double age = (DateTime.UtcNow - environment.CheckedUtc).TotalMinutes;
+            if (age > 10 || age < -1) missing.Add("检查结果已过期，请重新进行只读检查");
+        }
+        if (RescueCheck.IsChecked != true) missing.Add("准备恢复 U 盘和帐户密码后勾选第一项确认");
+        if (TrialCheck.IsChecked != true) missing.Add("阅读单次试启动说明后勾选第二项确认");
+        if (environment?.SecureBoot == true && ShimCheck.IsChecked != true) missing.Add("阅读 Secure Boot / shim 指引后勾选第三项确认");
+        return missing;
     }
     private void ChooseImageClick(object sender, RoutedEventArgs e)
     {
@@ -82,7 +105,12 @@ public partial class BootLogoWindow : Window
     }
     private async void ProbeClick(object sender, RoutedEventArgs e) => await Work(async () =>
     {
-        var response = await execute(new BootLogoRequest()); environment = response.Environment;
+        environment = null; probePassed = false;
+        HardwareText.Text = "正在进行管理员只读检查…"; Refresh();
+        BootLogoResponse response;
+        try { response = await execute(new BootLogoRequest()); }
+        catch { HardwareText.Text = "只读检查未完成；尚不能确认安装条件，请重新检查。"; throw; }
+        environment = response.Environment; probePassed = response.Success;
         HardwareText.Text = environment == null ? response.Message :
             environment.Model + "\nUEFI x64：" + (environment.Uefi && environment.X64 ? "是" : "否 / 未知") +
             " · 安全启动：" + (environment.SecureBoot == null ? "未知" : environment.SecureBoot.Value ? "开（使用 shim）" : "关") +
@@ -137,7 +165,13 @@ public partial class BootLogoWindow : Window
     }
     private void GuideClick(object sender, RoutedEventArgs e)
         => ShowText("开机 Logo · 图片、BIOS 与恢复说明", BootLogoPackage.Guide);
-    private void DetailsClick(object sender, RoutedEventArgs e) => ShowText("开机 Logo · 操作详情", LogoStatus.Text);
+    private void RequirementsClick(object sender, RoutedEventArgs e)
+    {
+        Refresh(); ShowText("开机 Logo · 安装条件", InstallHint.Text);
+    }
+    private void DetailsClick(object sender, RoutedEventArgs e) => ShowText("开机 Logo · 操作详情", LogoStatus.Text +
+        (string.IsNullOrEmpty(environment?.FirmwareDetails) ? "" : "\n\n" + environment.FirmwareDetails));
+    private void FirmwareDetailsClick(object sender, RoutedEventArgs e) => ShowText("开机 Logo · 只读启动项详情", environment?.FirmwareDetails ?? "尚未读取固件启动项。");
     private void ShowText(string title, string text)
     {
         var window = new Window { Title = title, Owner = this, Width = 820, Height = 690, WindowStartupLocation = WindowStartupLocation.CenterOwner,

@@ -44,6 +44,13 @@ internal static class BootLogoChecks
             if (CorruptAt == Writes.Count && value != null) Values[name] = new(value.Attributes, new byte[] { 9 });
         }
     }
+    private static byte[] DeviceOnlyEntry(string label)
+    {
+        using var output = new MemoryStream(); using var writer = new BinaryWriter(output);
+        writer.Write(1u); writer.Write((ushort)15); writer.Write(Encoding.Unicode.GetBytes(label + "\0"));
+        writer.Write(new byte[] { 3, 15, 11, 0, 255, 255, 255, 255, 255, 255, 255 });
+        writer.Write(new byte[] { 0x7f, 0xff, 4, 0 }); return output.ToArray();
+    }
     private static void Reject(Action action, Action<bool, string> check, string name)
     {
         bool rejected = false; try { action(); } catch { rejected = true; } check(rejected, name);
@@ -126,6 +133,19 @@ internal static class BootLogoChecks
         var extra = new FakeFirmware(); extra.Values["Boot0007"] = new(7, original);
         Reject(() => new BootLogoRegistration(extra).Prepare(Partition), check, "存在其他未引用固件项也停止，避免覆盖多系统 / 旧安装");
         check(extra.Writes.Count == 0, "不支持的多启动环境只读检查，不删其他项来腾槽位");
+        var devices = new FakeFirmware(); devices.Values["Boot0007"] = new(7, DeviceOnlyEntry("UEFI USB Device"));
+        devices.Values["BootOrder"] = new(7, new ushort[] { 5, 7 }.SelectMany(BitConverter.GetBytes).ToArray());
+        var inspector = new BootLogoRegistration(devices); string report = inspector.Inspect();
+        check(report.Contains("Boot0007") && report.Contains("UEFI USB Device") && report.Contains(BootLogoEntry.WindowsPath) && report.Contains("不作为安装或删除依据"),
+            "只读诊断列出实际编号、设备名称、Windows 路径与名称判断边界");
+        check(devices.Writes.Count == 0, "启动项详情仅执行读取，不注册、不删除、不调整顺序");
+        string blockedMessage = ""; try { inspector.Prepare(Partition); } catch (InvalidDataException ex) { blockedMessage = ex.Message; }
+        check(blockedMessage.Contains("Boot0007") && blockedMessage.Contains("UEFI USB Device") && blockedMessage.Contains("不一定代表双系统"),
+            "额外项被阻止时显示具体项，不将 USB 名称误当作已验证的安全项或双系统");
+        var mislabeled = new FakeFirmware(); mislabeled.Values["Boot0007"] = new(7, DeviceOnlyEntry("Windows Boot Manager"));
+        Reject(() => new BootLogoRegistration(mislabeled).Prepare(Partition), check, "名称伪装成 Windows 也不能绕过未知设备路径保护");
+        check(!BootLogoEntry.Describe(DeviceOnlyEntry("设备\n伪造第二行")).Contains("设备\n"), "诊断名称控制字符清理，不能伪造报告行");
+        check(BootLogoEntry.Describe(new byte[] { 1 }).Contains("无法解析"), "损坏设备项仍可报告，诊断不读取越界");
         Type privilege = typeof(BootLogoNativeFirmware).GetNestedType("Privilege", System.Reflection.BindingFlags.NonPublic)!;
         check(System.Runtime.InteropServices.Marshal.SizeOf(privilege) == 16 && System.Runtime.InteropServices.Marshal.OffsetOf(privilege, "Luid").ToInt32() == 4,
             "TOKEN_PRIVILEGES x64 ABI 大小与 LUID 偏移符合 Win32 结构，非托管 long 自然对齐");
@@ -151,15 +171,16 @@ internal static class BootLogoChecks
                 var source = BitmapSource.Create(80, 40, 96, 96, PixelFormats.Bgra32, null, rgba, 80 * 4);
                 string input = Path.Combine(work, "半透明 Logo.png"); var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(source));
                 using (var file = File.Create(input)) png.Save(file);
-                int probeCount = 0, installCount = 0;
+                int probeCount = 0, installCount = 0; bool rejectedProbe = false, staleProbe = false;
                 var window = new BootLogoWindow(new AppPaths(Path.Combine(work, "data")), request =>
                 {
                     if (request.Action == "install") { installCount++; return Task.FromResult(new BootLogoResponse { Success = true, Message = "模拟安装完成" }); }
                     probeCount++;
-                    return Task.FromResult(new BootLogoResponse { Success = probeCount > 1, Message = probeCount > 1 ? "模拟检查通过" : "模拟未知加密",
+                    return Task.FromResult(new BootLogoResponse { Success = probeCount > 1 && !rejectedProbe, Message = probeCount > 1 ? "模拟检查通过" : "模拟未知加密",
                         Environment = new BootLogoEnvironment { Administrator = true, Uefi = true, X64 = true, SecureBoot = true,
                             OsFullyDecrypted = probeCount > 1 ? true : null, EspCount = 1, EspOnOsDisk = true, EspVolume = Volume,
-                            EspPartitionGuid = Partition.ToString(), EspFreeBytes = 64L * 1024 * 1024, CheckedUtc = DateTime.UtcNow } });
+                            EspPartitionGuid = Partition.ToString(), EspFreeBytes = 64L * 1024 * 1024,
+                            FirmwareDetails = "模拟 Boot0007 设备项 · 无真实固件调用", CheckedUtc = DateTime.UtcNow.AddMinutes(staleProbe ? -11 : 0) } });
                 }, _ => true) { ShowInTaskbar = false, ShowActivated = false, WindowStartupLocation = WindowStartupLocation.Manual, Left = -10000, Top = -10000 };
                 var install = (Button)window.FindName("InstallLogoButton"); var export = (Button)window.FindName("ExportButton");
                 var probe = (Button)window.FindName("ProbeButton");
@@ -171,6 +192,8 @@ internal static class BootLogoChecks
                     try
                     {
                         check(!install.IsEnabled && !export.IsEnabled, "GUI 初次打开不启用安装与导出");
+                        var hint = window.FindName("InstallHint") as TextBlock;
+                        check(hint != null && hint.Text.Contains("选择图片") && hint.Text.Contains("只读检查"), "GUI 安装按钮禁用时直接列出缺少的步骤，不让用户猜原因");
                         window.SelectImage(input); check(export.IsEnabled && !install.IsEnabled, "GUI 选图后可导出，仍不能安装");
                         byte[] bmp = BootLogoImage.Convert(input); var size = BootLogoImage.Validate(bmp);
                         check(size == (320, 180) && bmp[54] == 0, "实际 WPF 转换生成推荐画布、黑边与 BMP3");
@@ -192,9 +215,17 @@ internal static class BootLogoChecks
                         File.Delete(input); check(File.Exists(Path.Combine(prepare, "splash.bmp")), "删除原始图片不影响准备包");
                         rescue.IsChecked = trial.IsChecked = shim.IsChecked = true;
                         probe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); check(!install.IsEnabled && probeCount == 1, "实际检查按钮收到未知加密时阻止安装");
+                        check(hint!.Text.Contains("加密状态未知"), "GUI 安装按钮旁显示硬件检查的具体阻止原因");
                         probe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); check(install.IsEnabled && probeCount == 2, "实际检查与确认全部通过后安装按钮可点");
-                        shim.IsChecked = false; check(!install.IsEnabled, "Secure Boot 未确认 shim 步骤时不能安装"); shim.IsChecked = true;
-                        rescue.IsChecked = false; check(!install.IsEnabled, "恢复介质确认可撤销，立刻阻止安装"); rescue.IsChecked = true;
+                        check(((Button)window.FindName("FirmwareDetailsButton")).IsEnabled, "收到启动项只读报告后详情按钮可点");
+                        shim.IsChecked = false; check(!install.IsEnabled && hint.Text.Contains("第三项确认"), "Secure Boot 未确认 shim 步骤时提示缺少第三项"); shim.IsChecked = true;
+                        rescue.IsChecked = false; check(!install.IsEnabled && hint.Text.Contains("第一项确认"), "撤销恢复介质确认后提示缺少第一项"); rescue.IsChecked = true;
+                        trial.IsChecked = false; check(!install.IsEnabled && hint.Text.Contains("第二项确认"), "撤销试启动确认后提示缺少第二项"); trial.IsChecked = true;
+                        rejectedProbe = true; probe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        check(!install.IsEnabled && hint.Text.Contains("只读检查未通过"), "辅助报告返回失败时，即使硬件字段完整也不放行"); rejectedProbe = false;
+                        staleProbe = true; probe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        check(!install.IsEnabled && hint.Text.Contains("过期"), "检查过期时禁用安装并明确提示重新检查"); staleProbe = false;
+                        probe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); check(install.IsEnabled, "重新通过检查后恢复可安装状态");
                         install.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                         check(installCount == 1 && !install.IsEnabled && ((TextBlock)window.FindName("LogoStatus")).Text == "模拟安装完成", "实际 GUI 点击走确认与执行流程，完成后要求重新检查；执行器全部为模拟");
                         done.TrySetResult();

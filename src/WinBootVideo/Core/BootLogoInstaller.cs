@@ -56,7 +56,12 @@ public static class BootLogoInstaller
             var blockers = environment.Blockers();
             if (blockers.Count == 0)
             {
-                try { new BootLogoRegistration(new BootLogoNativeFirmware()).Prepare(Guid.Parse(environment.EspPartitionGuid)); }
+                try
+                {
+                    var registration = new BootLogoRegistration(new BootLogoNativeFirmware());
+                    environment.FirmwareDetails = registration.Inspect();
+                    registration.Prepare(Guid.Parse(environment.EspPartitionGuid));
+                }
                 catch (Exception ex) { environment.Error = ex.Message; blockers = environment.Blockers(); }
             }
             return new BootLogoResponse { Success = blockers.Count == 0, Environment = environment,
