@@ -16,6 +16,12 @@ string work = Path.Combine(Path.GetTempPath(), "WinBootVideo-checks-" + Guid.New
 Directory.CreateDirectory(work);
 try
 {
+    if (args.Length == 1 && args[0] == "--strict-desktop-only")
+    {
+        StrictDesktopChecks.Run(Check);
+        Console.WriteLine($"{checks} strict desktop order checks passed. Production policy; no Shell writes.");
+        return;
+    }
     if (args.Length == 2 && args[0] == "--startup-repair-only")
     {
         await StartupRepairChecks.Run(args[1], Check);
@@ -73,11 +79,6 @@ try
     }
     if ((args.Length == 2 || args.Length == 3) && args[0] == "--gui-fullscreen-only")
     {
-        if (System.Windows.Forms.Screen.AllScreens.Length < 2)
-        {
-            Console.WriteLine("SKIP: full-screen GUI multi-monitor regression requires at least two real screens.");
-            return;
-        }
         await GuiFlowChecks.Run(args[1], Check, args.Length == 3 ? args[2] : null, fullscreen: true);
         Console.WriteLine($"{checks} actual full-screen GUI checks passed. No real registry writes.");
         return;
@@ -88,19 +89,20 @@ try
     timeout.Tick(0, false, false, true, false);
     Check(!timeout.Tick(7999, false, false, true, false).StartDesktop, "未就绪时不提前启动桌面");
     var expired = timeout.Tick(8000, false, false, true, false);
-    Check(expired.StartDesktop && !expired.KillPlayer && !expired.Finished, "初始化软期限放行桌面，冷启动的播放器仍保留独立预算");
+    Check(!expired.StartDesktop && !expired.KillPlayer && !expired.Finished, "初始化八秒时仍不提前放行桌面，保留冷启动预算");
     Check(!timeout.Tick(29999, false, false, true, false).KillPlayer, "可见后的独立三十秒冷启动期限到达前保留播放器");
     var coldExpired = timeout.Tick(30000, false, false, true, false);
     Check(coldExpired.KillPlayer && coldExpired.Finished && coldExpired.Reason == "cold-start-timeout", "冷启动期限到达仍未就绪时清理自己的播放器");
     var ready = new SupervisorPolicy(8000, 45000);
-    Check(ready.Tick(400, true, false, true, false).StartDesktop, "遮罩就绪后才启动桌面");
-    Check(!ready.Tick(500, true, true, true, false).StartDesktop, "仅请求一次启动");
-    Check(!ready.Tick(45000, true, true, true, false).KillPlayer, "总等待预算从真正开始播放信号计时");
-    Check(ready.Tick(45500, true, true, true, false).KillPlayer, "播放器开始后卡死仍受独立总上限约束");
+    Check(!ready.Tick(400, true, false, true, false).StartDesktop, "遮罩就绪仍等待视频首帧，不启动桌面");
+    Check(ready.Tick(500, true, true, true, false, true).StartDesktop, "视频首帧呈现后才请求桌面");
+    Check(!ready.Tick(600, true, true, true, false, true).StartDesktop, "仅请求一次启动");
+    Check(!ready.Tick(45000, true, true, true, false, true).KillPlayer, "总等待预算从真正开始播放信号计时");
+    Check(ready.Tick(45500, true, true, true, false, true).KillPlayer, "播放器开始后卡死仍受独立总上限约束");
     var early = new SupervisorPolicy(8000, 45000).Tick(200, false, false, true, true);
     Check(early.StartDesktop && early.Finished && !early.KillPlayer, "播放器提前失败也放行桌面");
     var hidden = new SupervisorPolicy(2000, 5000, 15000);
-    Check(hidden.Tick(0, true, false, false, false).StartDesktop, "不可见桌面遮罩就绪后仍允许正常 Shell 完成初始化");
+    Check(!hidden.Tick(0, true, false, false, false).StartDesktop, "不可见桌面遮罩就绪后仍不提前启动 Explorer");
     Check(!hidden.Tick(9000, true, false, false, false).KillPlayer, "认证期间等待不消费初始化或播放预算");
     Check(!hidden.Tick(10000, true, false, true, false).KillPlayer, "输入桌面首次激活后开始等待播放握手");
     Check(!hidden.Tick(11999, true, false, true, false).KillPlayer, "可见后的播放握手保留完整初始化预算");
@@ -115,6 +117,7 @@ try
     var left = interrupted.Tick(100, true, true, false, false);
     Check(left.KillPlayer && left.Reason == "input-desktop-left", "播放后离开输入桌面立即清理，不在下一次解锁续播");
     ColdStartChecks.RunPolicy(Check);
+    StrictDesktopChecks.Run(Check);
     DesktopLaunchChecks.Run(Check);
     LogonTaskChecks.RunLogic(Check);
     string sessionKey = LogonSessionIdentity.Read();

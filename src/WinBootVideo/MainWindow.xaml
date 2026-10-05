@@ -1,4 +1,4 @@
-<Window x:Class="WinBootVideo.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="WinBootVideo · 登录动画 (0.1.5)" Width="1100" Height="810" MinWidth="1000" MinHeight="740" WindowStartupLocation="CenterScreen" Background="#F5F7FA" AllowDrop="True" Drop="OnDrop" DragOver="OnDragOver">
+<Window x:Class="WinBootVideo.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="WinBootVideo · 登录动画 (0.1.6)" Width="1100" Height="810" MinWidth="1000" MinHeight="740" WindowStartupLocation="CenterScreen" Background="#F5F7FA" AllowDrop="True" Drop="OnDrop" DragOver="OnDragOver">
   <Grid Background="#F5F7FA">
     <Grid.ColumnDefinitions><ColumnDefinition Width="184"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
     <Border Background="#ECF1F7" BorderBrush="#DFE5ED" BorderThickness="0,0,1,0">
@@ -12,7 +12,7 @@
         <Border Grid.Row="1" Margin="-8,34,-4,0" Background="#DCE9F7" CornerRadius="6" Padding="13,12"><TextBlock Text="▶  登录动画" Foreground="#105EA8" FontWeight="SemiBold"/></Border>
         <StackPanel Grid.Row="3">
           <TextBlock Text="WINDOWS 11" FontSize="11" FontWeight="SemiBold" Foreground="#657487"/>
-          <TextBlock Text="个人使用初版 0.1.5" Style="{StaticResource Small}" Margin="0,4,0,16"/>
+          <TextBlock Text="个人使用初版 0.1.6" Style="{StaticResource Small}" Margin="0,4,0,16"/>
           <Button Content="视频要求与恢复说明" Click="HelpClick" Padding="8,9" FontSize="11"/>
         </StackPanel>
       </Grid>
@@ -70,7 +70,7 @@
               </StackPanel>
             </Border>
             <Border Background="#EAF2FC" CornerRadius="8" Padding="15" Margin="0,16,0,0">
-              <TextBlock Text="预览中按 Esc 或空格跳过。&#10;动画结束后淡出到桌面。&#10;&#10;备用登录入口提高播放可靠性，可能在桌面刚出现后覆盖。恢复普通登录会同时移除备用入口。&#10;&#10;成功预览后才可以启用。" Foreground="#35577C" FontSize="12" LineHeight="21"/>
+              <TextBlock Text="预览中按 Esc 或空格跳过。&#10;动画结束后淡出到桌面。&#10;&#10;桌面前模式：视频首帧呈现后才启动 Explorer，动画在覆盖层中播放，再淡出显示桌面。加载失败时跳过动画进入桌面。&#10;&#10;成功预览后才可以启用。" Foreground="#35577C" FontSize="12" LineHeight="21"/>
             </Border>
           </StackPanel>
         </Grid>

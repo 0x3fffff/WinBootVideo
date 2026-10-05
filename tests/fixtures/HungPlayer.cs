@@ -14,6 +14,10 @@ internal static class HungPlayer
             int index = Array.IndexOf(args, "--token");
             using (var ready = EventWaitHandle.OpenExisting(@"Local\WinBootVideo.Ready." + args[index + 1])) ready.Set();
             using (var playback = EventWaitHandle.OpenExisting(@"Local\WinBootVideo.Playback." + args[index + 1])) playback.Set();
+            // A synthetic handshake only: this fixture tests the independent
+            // watchdog, while actual presentation is verified with real WPF.
+            if (Environment.GetEnvironmentVariable("WINBOOTVIDEO_FIXTURE_FRAME") == "1")
+                using (var frame = EventWaitHandle.OpenExisting(@"Local\WinBootVideo.FirstFrame." + args[index + 1])) frame.Set();
         }
         Thread.Sleep(Timeout.Infinite);
     }

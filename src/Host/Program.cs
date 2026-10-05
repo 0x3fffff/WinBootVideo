@@ -21,7 +21,6 @@ namespace WinBootVideo.Host
         private static readonly Stopwatch lifetime = Stopwatch.StartNew();
         private static volatile bool supervisorRunning;
         private static volatile bool flowFinished;
-        private static int startupLimitMilliseconds = 8000;
         private static Process explorerStarted;
         private static readonly DesktopLaunchCoordinator desktopLaunch = new DesktopLaunchCoordinator(
             delegate { return GetShellWindow() != IntPtr.Zero; },
@@ -51,18 +50,21 @@ namespace WinBootVideo.Host
             try
             {
                 dataDirectory = Path.GetFullPath(Argument(args, "--data-dir", dataDirectory));
-                Log("host-entry source=" + entrySource + " pid=" + Process.GetCurrentProcess().Id + " version=0.1.5");
+                Log("host-entry source=" + entrySource + " pid=" + Process.GetCurrentProcess().Id + " version=0.1.6");
                 if (restoring) { RestoreShell(); return 0; }
                 if (startupFallback && !preview)
                 {
-                    FallbackStartupResult result = WaitForExistingDesktop();
-                    if (result != FallbackStartupResult.Ready) return result == FallbackStartupResult.Disabled ? 0 : 31;
-                    // Waiting for the primary shell must not consume playback startup time.
-                    lifetime.Restart();
-                    StartInitializerGuard();
+                    Log("strict-mode: late task playback disabled");
+                    return 0;
                 }
                 if (!preview)
                 {
+                    if (GetShellWindow() != IntPtr.Zero && InputDesktopState.Read().CanPresent)
+                    {
+                        Log("strict-mode: desktop already visible; skip late animation");
+                        ownsLoginFlow = false;
+                        return 0;
+                    }
                     string session = LogonSessionIdentity.Read();
                     return LoginAttemptGate.Run(session, Path.Combine(dataDirectory, "last-logon.txt"),
                         delegate { return Run(args); },
@@ -81,7 +83,7 @@ namespace WinBootVideo.Host
             {
                 while (!flowFinished && !supervisorRunning)
                 {
-                    if (lifetime.ElapsedMilliseconds >= startupLimitMilliseconds)
+                    if (lifetime.ElapsedMilliseconds >= StartupLimits.ColdStartMilliseconds)
                     {
                         if (flowFinished || supervisorRunning) return;
                         Log("host-initialization-timeout source=" + entrySource);
@@ -104,14 +106,6 @@ namespace WinBootVideo.Host
                 return string.Equals(current, command, StringComparison.OrdinalIgnoreCase);
             }
         }
-        private static FallbackStartupResult WaitForExistingDesktop()
-        {
-            var waiting = Stopwatch.StartNew();
-            return FallbackStartupGate.WaitUntilDesktop(IsOwnShellEnabled,
-                delegate { return GetShellWindow() != IntPtr.Zero; },
-                delegate { return waiting.ElapsedMilliseconds; },
-                delegate { Thread.Sleep(100); }, Log);
-        }
         private static int Run(string[] args)
         {
             string configPath = Argument(args, "--config", Path.Combine(dataDirectory, "settings.json"));
@@ -119,7 +113,6 @@ namespace WinBootVideo.Host
             var config = json.Deserialize<Dictionary<string, object>>(File.ReadAllText(configPath));
             int total = Number(config, "maxDurationSeconds", 45, 5, 90);
             int startup = Number(config, "startupTimeoutSeconds", 8, 2, 15);
-            startupLimitMilliseconds = startup * 1000;
             if (startup >= total) throw new InvalidDataException("Invalid time limits.");
             object video;
             if (!config.TryGetValue("videoPath", out video) || !File.Exists(Convert.ToString(video))) throw new FileNotFoundException("Video missing.");
@@ -128,6 +121,7 @@ namespace WinBootVideo.Host
             string token = Guid.NewGuid().ToString("N");
             using (var ready = new EventWaitHandle(false, EventResetMode.ManualReset, @"Local\WinBootVideo.Ready." + token))
             using (var playback = new EventWaitHandle(false, EventResetMode.ManualReset, @"Local\WinBootVideo.Playback." + token))
+            using (var firstFrame = new EventWaitHandle(false, EventResetMode.ManualReset, @"Local\WinBootVideo.FirstFrame." + token))
             {
                 var info = new ProcessStartInfo(player);
                 info.UseShellExecute = false;
@@ -142,7 +136,7 @@ namespace WinBootVideo.Host
                 {
                     if (process == null) throw new IOException("Cannot start player.");
                     Log("player-start: " + process.Id);
-                    Log("login-flow mode=" + (preview ? "preview" : "login") + " source=" + entrySource + " version=0.1.5");
+                    Log("login-flow mode=" + (preview ? "preview" : "login") + " source=" + entrySource + " version=0.1.6 strict-before-desktop=true");
                     supervisorRunning = true;
                     var clock = lifetime;
                     var policy = new SupervisorPolicy(startup * 1000L, total * 1000L);
@@ -151,6 +145,7 @@ namespace WinBootVideo.Host
                     string lastDesktopReason = "";
                     bool playbackSeen = false;
                     bool overlaySeen = false;
+                    bool firstFrameSeen = false;
                     while (true)
                     {
                         var desktop = InputDesktopState.Read();
@@ -163,14 +158,20 @@ namespace WinBootVideo.Host
                         if (started && !playbackSeen) { playbackSeen = true; Log("playback-confirmed elapsed-ms=" + clock.ElapsedMilliseconds); }
                         bool rendered = ready.WaitOne(0);
                         if (rendered && !overlaySeen) { overlaySeen = true; Log("overlay-confirmed elapsed-ms=" + clock.ElapsedMilliseconds); }
-                        var action = policy.Tick(clock.ElapsedMilliseconds, rendered, started, desktop.CanPresent, process.HasExited);
-                        if (action.StartDesktop && !preview && !startupFallback) { EnsureDesktop(); desktopStarted = true; lastDesktopAttempt = clock.ElapsedMilliseconds; }
+                        bool framePresented = firstFrame.WaitOne(0);
+                        if (framePresented && !firstFrameSeen) { firstFrameSeen = true; Log("first-frame-confirmed elapsed-ms=" + clock.ElapsedMilliseconds); }
+                        var action = policy.Tick(clock.ElapsedMilliseconds, rendered, started, desktop.CanPresent, process.HasExited, framePresented);
                         if (desktopStarted && !preview && !startupFallback && GetShellWindow() == IntPtr.Zero && clock.ElapsedMilliseconds - lastDesktopAttempt >= 3000)
                         { EnsureDesktop(); lastDesktopAttempt = clock.ElapsedMilliseconds; }
                         if (action.KillPlayer)
                         {
                             Log(action.Reason);
                             try { process.Kill(); process.WaitForExit(500); } catch (InvalidOperationException) { }
+                        }
+                        if (action.StartDesktop)
+                        {
+                            Log("desktop-release-decision mode=" + (preview ? "preview" : "login") + " reason=" + (action.Finished ? "animation-abandoned" : "first-frame"));
+                            if (!preview && !startupFallback) { EnsureDesktop(); desktopStarted = true; lastDesktopAttempt = clock.ElapsedMilliseconds; }
                         }
                         if (action.Finished)
                         {

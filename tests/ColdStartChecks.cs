@@ -93,8 +93,8 @@ internal static class ColdStartChecks
         var policy = new SupervisorPolicy(8000, 45000, 120000);
         check(!policy.Tick(0, false, false, false, false).KillPlayer, "不可见且未 Ready 的启动不立即失败");
         var hidden = policy.Tick(8000, false, false, false, false);
-        check(hidden.StartDesktop && !hidden.KillPlayer && !hidden.Finished,
-            "未就绪且非输入桌面满八秒只请求 Shell 放行，不终止播放器");
+        check(!hidden.StartDesktop && !hidden.KillPlayer && !hidden.Finished,
+            "未就绪且非输入桌面满八秒仍不启动 Explorer，也不终止播放器");
         check(!policy.Tick(60000, false, false, false, false).KillPlayer,
             "未 Ready 的认证等待超过总播放上限仍不消耗初始化或播放预算");
         check(!policy.Tick(61000, false, false, true, false).KillPlayer,

@@ -48,6 +48,18 @@ internal static class IntegrationChecks
             var playback = await MediaTools.RunAsync(host, arguments, TimeSpan.FromSeconds(15), CancellationToken.None);
             var report = JsonSerializer.Deserialize<WinBootVideo.PreviewReceipt>(File.ReadAllText(receipt), Settings.JsonOptions)!;
             check(playback.ExitCode == 0 && report.Opened && report.PlaybackAdvanced && report.Succeeded, "真实 WPF 视频加载、播放与退出");
+            string orderTrace = File.ReadAllText(Path.Combine(paths.LogDirectory, "host.log"));
+            int frameConfirmed = orderTrace.IndexOf("first-frame-confirmed", StringComparison.Ordinal);
+            int desktopRelease = orderTrace.IndexOf("desktop-release-decision mode=preview reason=first-frame", StringComparison.Ordinal);
+            check(report.FirstFramePresented && frameConfirmed >= 0 && desktopRelease > frameConfirmed,
+                "真实 Host / WPF 在视频呈现握手后才产生 Explorer 放行决策，预览不启动真实桌面");
+            var latePaths = new AppPaths(Path.Combine(work, "disabled-late-entry"));
+            var late = await MediaTools.RunAsync(host, new[] { "--startup-fallback", "--data-dir", latePaths.DataDirectory }, TimeSpan.FromSeconds(5), CancellationToken.None);
+            string lateTrace = File.ReadAllText(Path.Combine(latePaths.LogDirectory, "host.log"));
+            check(late.ExitCode == 0 && lateTrace.Contains("late task playback disabled", StringComparison.Ordinal)
+                && !lateTrace.Contains("player-start:", StringComparison.Ordinal) && !lateTrace.Contains("Explorer requested", StringComparison.Ordinal)
+                && !File.Exists(Path.Combine(latePaths.DataDirectory, "last-logon.txt")),
+                "实际旧备用命令在严格模式下退出，不创建播放器、不启动 Explorer、不抢登录标记");
 
             await VisibilityGateChecks.RunIsolated(output, check);
 
@@ -68,16 +80,19 @@ internal static class IntegrationChecks
             File.Copy(host, Path.Combine(dummyBundle, "WinBootVideo.Host.exe"));
             File.Copy(host + ".config", Path.Combine(dummyBundle, "WinBootVideo.Host.exe.config"));
             File.Copy(fixture, Path.Combine(dummyBundle, "WinBootVideo.exe"));
-            foreach (bool ready in new[] { false, true })
+            foreach (int stage in new[] { 0, 1, 2 })
             {
+                bool ready = stage > 0;
+                File.WriteAllText(Path.Combine(paths.LogDirectory, "host.log"), "");
                 var info = new ProcessStartInfo(Path.Combine(dummyBundle, "WinBootVideo.Host.exe")) { UseShellExecute = false, CreateNoWindow = true };
                 foreach (string arg in arguments) info.ArgumentList.Add(arg);
                 string pidFile = Path.Combine(work, "fixture-pid.txt");
                 info.Environment["WINBOOTVIDEO_FIXTURE_PID"] = pidFile;
                 info.Environment["WINBOOTVIDEO_FIXTURE_READY"] = ready ? "1" : "0";
+                info.Environment["WINBOOTVIDEO_FIXTURE_FRAME"] = stage == 2 ? "1" : "0";
                 var timer = Stopwatch.StartNew();
                 using var parent = Process.Start(info)!;
-                double target = ready ? 5 : WinBootVideo.Shared.StartupLimits.ColdStartMilliseconds / 1000d;
+                double target = stage == 2 ? 5 : stage == 1 ? 2 : WinBootVideo.Shared.StartupLimits.ColdStartMilliseconds / 1000d;
                 using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(target + 5));
                 try { await parent.WaitForExitAsync(limit.Token); }
                 catch { parent.Kill(true); throw; }
@@ -85,7 +100,14 @@ internal static class IntegrationChecks
                 bool childExited;
                 try { using var child = Process.GetProcessById(childId); childExited = child.HasExited; } catch (ArgumentException) { childExited = true; }
                 check(parent.ExitCode == 31 && childExited && timer.Elapsed.TotalSeconds >= target && timer.Elapsed.TotalSeconds < target + 3,
-                    ready ? "就绪后卡死：独立宿主按总上限终止自己启动的子进程" : "就绪前卡死：独立宿主按可见后的冷启动期限终止自己启动的子进程");
+                    stage == 2 ? "首帧握手后卡死：独立宿主按总上限终止自己的子进程" : stage == 1 ? "遮罩就绪但无首帧：独立宿主按首帧握手期限取消动画" : "就绪前卡死：独立宿主按可见后的冷启动期限终止自己的子进程");
+                if (stage == 1)
+                {
+                    string failedTrace = File.ReadAllText(Path.Combine(paths.LogDirectory, "host.log"));
+                    check(!failedTrace.Contains("reason=first-frame", StringComparison.Ordinal)
+                        && failedTrace.Contains("desktop-release-decision mode=preview reason=animation-abandoned", StringComparison.Ordinal),
+                        "实际 Host 首帧缺失时只在取消动画后决定放行桌面，没有边放行边继续播放");
+                }
             }
 
             settings.VideoPath = input; settings.MaxDurationSeconds = 15; settings.StartupTimeoutSeconds = 4;

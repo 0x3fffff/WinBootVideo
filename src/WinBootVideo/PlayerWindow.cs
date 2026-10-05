@@ -27,6 +27,7 @@ public sealed class PreviewReceipt
     public bool Succeeded { get; set; }
     public bool ScreenCoverageVerified { get; set; }
     public bool InputDesktopConfirmed { get; set; }
+    public bool FirstFramePresented { get; set; }
     public long WaitingForDesktopMilliseconds { get; set; }
     public double PlaybackStartPositionMilliseconds { get; set; }
     public string VideoSha256 { get; set; } = "";
@@ -53,6 +54,7 @@ public sealed class PlayerWindow : Window
     private bool begun;
     private volatile bool stopped;
     private readonly bool windowed;
+    private readonly string selectedDevice;
     public PlayerWindow(string[] args, AppPaths paths, Func<bool>? visibilityProbe = null)
     {
         this.args = args; this.paths = paths;
@@ -70,6 +72,7 @@ public sealed class PlayerWindow : Window
         media = new MediaElement { LoadedBehavior = MediaState.Manual, UnloadedBehavior = MediaState.Manual, Stretch = Stretch.Uniform, Volume = settings.Volume, ScrubbingEnabled = true };
         Content = media;
         var screen = Forms.Screen.AllScreens.FirstOrDefault(s => s.DeviceName == settings.ScreenDevice) ?? Forms.Screen.PrimaryScreen ?? Forms.Screen.AllScreens[0];
+        selectedDevice = screen.DeviceName;
         if (!windowed) PositionOnScreen(this, screen);
         SourceInitialized += (_, _) => LogTiming("window-handle-ready");
         Loaded += (_, _) => LogTiming("window-loaded");
@@ -88,6 +91,7 @@ public sealed class PlayerWindow : Window
         {
             if (finishing) return;
             bool canPresent = CanPresent(out string reason);
+            if (canPresent && overlayReady && !windowed) ReassertCover();
             if (!overlayReady)
             {
                 if (!canPresent) coldInteractiveSince = -1;
@@ -124,6 +128,7 @@ public sealed class PlayerWindow : Window
         };
         Closing += (_, e) => { if (!stopped) { e.Cancel = true; _ = FinishAsync(2, "用户关闭预览。"); } };
         timer.Start();
+        CompositionTarget.Rendering += OnFrameRendering;
         LogTiming("constructor-complete screens=" + Forms.Screen.AllScreens.Length);
         StartGuardian();
     }
@@ -144,6 +149,7 @@ public sealed class PlayerWindow : Window
                 rendered.Add(ready.Task);
                 mask.Closing += (_, e) => { if (!stopped) { e.Cancel = true; _ = FinishAsync(2, "用户关闭预览。"); } };
                 mask.PreviewKeyDown += (_, key) => { if (key.Key is Key.Escape or Key.Space) _ = FinishAsync(2, "用户跳过。"); };
+                mask.Tag = screen.DeviceName;
                 PositionOnScreen(mask, screen); masks.Add(mask); mask.Show();
             }
         }
@@ -156,8 +162,7 @@ public sealed class PlayerWindow : Window
                 receipt.ScreenCoverageVerified &= masks.Zip(Forms.Screen.AllScreens.Where(s => s.DeviceName != selected.DeviceName)).All(pair => Covers(pair.First, pair.Second));
             if (!receipt.ScreenCoverageVerified) { await FinishAsync(30, "无法完整覆盖所选屏幕，请检查显示设置。"); return; }
         }
-        // Signal the mask first so Explorer can prepare behind it and Winlogon can
-        // leave its desktop. Rendering here does not establish user visibility.
+        // Ready establishes coverage only. Explorer must wait for FirstFrame.
         overlayReady = true;
         SignalHost("Ready");
         LogTiming("overlay-rendered mode=" + (Arguments.Has(args, "--preview") ? "preview" : "login"));
@@ -191,12 +196,53 @@ public sealed class PlayerWindow : Window
         SignalHost("Playback");
         media.Play();
     }
+    private void ReassertCover()
+    {
+        var screens = Forms.Screen.AllScreens;
+        var selected = screens.FirstOrDefault(s => s.DeviceName == selectedDevice) ?? Forms.Screen.PrimaryScreen ?? screens[0];
+        PlaceOnScreen(this, selected);
+        foreach (var mask in masks)
+        {
+            var screen = screens.FirstOrDefault(s => s.DeviceName == (string?)mask.Tag);
+            if (screen != null) PlaceOnScreen(mask, screen);
+        }
+    }
+    private void OnFrameRendering(object? sender, EventArgs e)
+    {
+        if (finishing || receipt.FirstFramePresented || !receipt.Opened || media.Position.TotalMilliseconds < 100 || !CanPresent(out _)) return;
+        if (!windowed)
+        {
+            ReassertCover();
+            var screens = Forms.Screen.AllScreens;
+            var selected = screens.FirstOrDefault(s => s.DeviceName == selectedDevice) ?? Forms.Screen.PrimaryScreen ?? screens[0];
+            if (!Covers(this, selected) || (settings.CoverOtherScreens && screens.Where(s => s.DeviceName != selected.DeviceName)
+                .Any(screen => !masks.Any(mask => (string?)mask.Tag == screen.DeviceName && Covers(mask, screen))))) return;
+        }
+        // Position advancement alone does not establish presentation. Wait for
+        // this process's queued composition work before releasing Explorer.
+        int result = DwmFlush();
+        if (result < 0) { _ = FinishAsync(30, "无法确认视频画面呈现，跳过本次动画。"); return; }
+        if (!CanPresent(out _)) return;
+        receipt.FirstFramePresented = true;
+        LogTiming("first-frame-presented position-ms=" + media.Position.TotalMilliseconds.ToString("F0", System.Globalization.CultureInfo.InvariantCulture));
+        SignalHost("FirstFrame");
+    }
     private void SignalHost(string phase)
     {
         string? token = Arguments.Value(args, "--token");
         if (token == null) return;
-        using var ready = EventWaitHandle.OpenExisting(@"Local\WinBootVideo." + phase + "." + token);
-        ready.Set();
+        try
+        {
+            using var ready = EventWaitHandle.OpenExisting(@"Local\WinBootVideo." + phase + "." + token);
+            ready.Set();
+        }
+        catch (WaitHandleCannotBeOpenedException)
+        {
+            // The parent can exit between the guardian's polls and this UI
+            // callback. A lost handshake is a failed login attempt, not playback.
+            LogTiming("host-signal-unavailable phase=" + phase);
+            Environment.Exit(31);
+        }
     }
     private void LogTiming(string message)
     {
@@ -230,7 +276,7 @@ public sealed class PlayerWindow : Window
                 media.BeginAnimation(MediaElement.VolumeProperty, new DoubleAnimation(0, new Duration(duration)));
                 await Task.Delay(duration);
             }
-            receipt.Succeeded = (exitCode is 0 or 2) && receipt.Opened && receipt.PlaybackAdvanced;
+            receipt.Succeeded = (exitCode is 0 or 2) && receipt.Opened && receipt.PlaybackAdvanced && receipt.FirstFramePresented;
             receipt.Message = receipt.Succeeded ? message : message + " 未确认有效视频播放。";
             string? report = Arguments.Value(args, "--receipt");
             if (report != null) AtomicJson.Write(report, receipt);
@@ -239,6 +285,7 @@ public sealed class PlayerWindow : Window
         finally
         {
             stopped = true;
+            CompositionTarget.Rendering -= OnFrameRendering;
             try { media.Close(); } catch (Exception ex) { App.Log(paths, ex); }
             foreach (var mask in masks) mask.Close();
             Close(); Application.Current.Shutdown(exitCode);
@@ -281,17 +328,21 @@ public sealed class PlayerWindow : Window
     {
         window.WindowStartupLocation = WindowStartupLocation.Manual;
         // HWND coordinates are physical pixels, including negative monitor origins.
-        void Place()
-        {
-            var rect = screen.Bounds;
-            if (!SetWindowPos(new WindowInteropHelper(window).Handle, new IntPtr(-1), rect.X, rect.Y, rect.Width, rect.Height, 0x0040)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
-        }
-        window.SourceInitialized += (_, _) => Place();
-        window.Loaded += (_, _) => Place();
+        window.SourceInitialized += (_, _) => PlaceOnScreen(window, screen);
+        window.Loaded += (_, _) => PlaceOnScreen(window, screen);
+    }
+    private static void PlaceOnScreen(Window window, Forms.Screen screen)
+    {
+        var rect = screen.Bounds;
+        var hwnd = new WindowInteropHelper(window).Handle;
+        if (IsIconic(hwnd)) ShowWindow(hwnd, 9);
+        if (!SetWindowPos(hwnd, new IntPtr(-1), rect.X, rect.Y, rect.Width, rect.Height, 0x0050))
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
     }
     private static bool Covers(Window window, Forms.Screen screen)
     {
-        if (!GetWindowRect(new WindowInteropHelper(window).Handle, out var rect)) return false;
+        var hwnd = new WindowInteropHelper(window).Handle;
+        if (!IsWindowVisible(hwnd) || IsIconic(hwnd) || (GetWindowLongPtr(hwnd, -20).ToInt64() & 8) == 0 || !GetWindowRect(hwnd, out var rect)) return false;
         var bounds = screen.Bounds;
         return rect.Left == bounds.Left && rect.Top == bounds.Top && rect.Right == bounds.Right && rect.Bottom == bounds.Bottom;
     }
@@ -299,4 +350,9 @@ public sealed class PlayerWindow : Window
     [DllImport("user32.dll", SetLastError = true)] private static extern bool GetWindowRect(IntPtr hwnd, out NativeRect rect);
     [DllImport("user32.dll")] private static extern IntPtr GetShellWindow();
     [DllImport("user32.dll", SetLastError = true)] private static extern bool SetWindowPos(IntPtr hwnd, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hwnd, int command);
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
+    [DllImport("dwmapi.dll")] private static extern int DwmFlush();
 }

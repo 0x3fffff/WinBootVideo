@@ -116,9 +116,17 @@ internal static class GuiFlowChecks
                             int ready = timing.IndexOf("overlay-rendered mode=preview", StringComparison.Ordinal);
                             int playback = timing.IndexOf("playback-start input-confirmed=true position-ms=0", StringComparison.Ordinal);
                             int opened = timing.IndexOf("media-opened", StringComparison.Ordinal);
-                            check(secondary >= 0, "GUI 真正全屏预览经过真实副屏遮罩 ContentRendered，未绕过多屏路径");
-                            check(ready > secondary, "GUI 副屏遮罩渲染及 HWND 物理覆盖检查成功后完成 Ready 握手");
+                            if (System.Windows.Forms.Screen.AllScreens.Length > 1)
+                            {
+                                check(secondary >= 0, "GUI 真正全屏预览经过真实副屏遮罩 ContentRendered，未绕过多屏路径");
+                                check(ready > secondary, "GUI 副屏遮罩渲染及 HWND 物理覆盖检查成功后完成 Ready 握手");
+                            }
+                            else check(ready >= 0, "GUI 单屏全屏渲染及 HWND 物理覆盖检查完成 Ready 握手");
                             check(playback > ready && opened > playback, "GUI 真实 Host 与 WPF 播放器完成可见桌面确认、从零开始及视频解码");
+                            string hostTrace = File.ReadAllText(Path.Combine(paths.LogDirectory, "host.log"));
+                            int firstFrame = hostTrace.IndexOf("first-frame-confirmed", StringComparison.Ordinal);
+                            check(firstFrame >= 0 && hostTrace.IndexOf("desktop-release-decision mode=preview reason=first-frame", StringComparison.Ordinal) > firstFrame,
+                                "GUI 真正全屏预览的首帧呈现确认先于 Explorer 交接决策");
                             check(timing.Contains("playback-exit code=0", StringComparison.Ordinal), "GUI 真正全屏视频播放完整结束，未靠 Esc 跳过通过验证");
                         }
                         completed.TrySetResult();

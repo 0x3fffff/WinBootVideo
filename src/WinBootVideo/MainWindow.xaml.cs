@@ -69,7 +69,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            bool enabled = shell.IsEnabled(Sid);
+            bool enabled = shell.IsStrictEnabled(Sid);
             bool owned = shell.HasOwnedStartup(Sid);
             StartupBadge.Text = enabled ? "已启用 · 下次登录生效" : owned ? "登录启动待修复" : "尚未启用";
             RestoreButton.IsEnabled = !busy && owned;
@@ -197,9 +197,9 @@ public partial class MainWindow : Window
         store.Write(draft);
         shell.Deploy(AppContext.BaseDirectory);
         WriteRecoveryCommand();
-        shell.Enable(Sid);
+        shell.EnableStrict(Sid);
         settings = draft;
-        StatusText.Text = "已启用，并已设置备用登录入口。下次登录生效；备用播放可能在桌面刚出现后覆盖。此窗口可随时恢复普通登录。";
+        StatusText.Text = "已启用桌面前模式。视频首帧呈现后才启动 Explorer；已移除本应用的备用播放任务。此窗口可恢复普通登录。";
     });
     private void WriteRecoveryCommand()
     {

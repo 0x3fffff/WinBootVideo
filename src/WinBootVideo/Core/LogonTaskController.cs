@@ -94,6 +94,7 @@ public sealed class LoginStartupController
     }
     public bool ShellEnabled => shell.IsEnabled;
     public bool IsEnabled(string sid) => shell.IsEnabled && task.IsEnabled(sid);
+    public bool IsStrictEnabled(string sid) => shell.IsEnabled && !task.IsEnabled(sid);
     public bool HasOwnedStartup(string sid) => shell.IsEnabled || task.HasOwnedTask(sid);
     public void Enable(string sid)
     {
@@ -104,6 +105,21 @@ public sealed class LoginStartupController
         {
             try { if (!shellWasOwned && shell.IsEnabled) shell.Disable(sid); }
             catch (Exception rollback) { throw new AggregateException("启用登录动画失败，Shell 回滚也未完成。", failure, rollback); }
+            throw;
+        }
+    }
+    public void EnableStrict(string sid)
+    {
+        bool shellWasOwned = shell.IsEnabled;
+        shell.Enable(sid);
+        try
+        {
+            task.Restore(sid);
+            if (!IsStrictEnabled(sid)) throw new InvalidOperationException("备用播放任务仍启用，尚未完成桌面前模式切换。");
+        }
+        catch
+        {
+            if (!shellWasOwned && shell.IsEnabled) shell.Disable(sid);
             throw;
         }
     }

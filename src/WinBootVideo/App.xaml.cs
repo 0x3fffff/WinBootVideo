@@ -36,10 +36,10 @@ public partial class App : Application
                 string sid = WindowsIdentity.GetCurrent().User?.Value ?? throw new InvalidOperationException("无法识别当前用户。");
                 var startup = new LoginStartupController(paths);
                 if (!startup.HasOwnedStartup(sid)) throw new InvalidOperationException("此命令仅修复已有登录动画；首次启用请使用 GUI。");
-                startup.Enable(sid);
+                startup.EnableStrict(sid);
                 string? report = Arguments.Value(e.Args, "--startup-report");
-                if (report != null) AtomicJson.Write(report, new { version = "0.1.5", enabled = startup.IsEnabled(sid) });
-                Shutdown(startup.IsEnabled(sid) ? 0 : 30);
+                if (report != null) AtomicJson.Write(report, new { version = "0.1.6", enabled = startup.IsStrictEnabled(sid), strictBeforeDesktop = true });
+                Shutdown(startup.IsStrictEnabled(sid) ? 0 : 30);
                 return;
             }
             if (Arguments.Has(e.Args, "--player"))
