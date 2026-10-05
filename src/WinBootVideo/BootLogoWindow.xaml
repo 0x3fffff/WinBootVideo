@@ -31,7 +31,7 @@
               <Button x:Name="FirmwareDetailsButton" Content="启动项详情" Click="FirmwareDetailsClick" IsEnabled="False"/>
             </WrapPanel>
             <TextBlock Text="额外启动项可能是 USB、网络或厂商功能，也可能是其他系统；名称不能作为安全依据。检查后可在详情中查看，不要删除它们绕过检查。" Style="{StaticResource Small}" Margin="0,10,0,0"/>
-            <TextBlock Text="仅支持当前 UEFI x64、单 Windows 启动项、单 EFI 系统分区且系统盘未加密。加密、多个启动分区、第三方或未知配置均阻止安装。" Style="{StaticResource Small}" Margin="0,10,0,0"/>
+            <TextBlock Text="支持当前 UEFI x64、单 Windows 启动项、单 EFI 系统分区且系统盘未加密；允许完整核验后的 Insyde 通用 USB / 光驱 / 网络入口并原样保留。加密、多分区、其他系统或未知配置仍阻止安装。" Style="{StaticResource Small}" Margin="0,10,0,0"/>
           </StackPanel></Border>
           <Border Style="{StaticResource Card}" Margin="0,14,0,0"><StackPanel>
             <TextBlock Text="03  准备与确认" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12"/>

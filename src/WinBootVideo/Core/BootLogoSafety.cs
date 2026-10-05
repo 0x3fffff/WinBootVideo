@@ -19,6 +19,7 @@ public sealed class BootLogoEnvironment
     public string EspPartitionGuid { get; set; } = "";
     public long? EspFreeBytes { get; set; }
     public string Model { get; set; } = "";
+    public string FirmwareManufacturer { get; set; } = "";
     public string Error { get; set; } = "";
     public string FirmwareDetails { get; set; } = "";
     public DateTime CheckedUtc { get; set; }
@@ -153,7 +154,9 @@ public interface IBootLogoFirmware
 public sealed class BootLogoRegistration
 {
     private readonly IBootLogoFirmware firmware;
-    public BootLogoRegistration(IBootLogoFirmware firmware) => this.firmware = firmware;
+    private readonly string firmwareManufacturer;
+    public BootLogoRegistration(IBootLogoFirmware firmware, string firmwareManufacturer = "")
+    { this.firmware = firmware; this.firmwareManufacturer = firmwareManufacturer; }
     public static ushort[] Order(FirmwareValue? value)
     {
         if (value == null || value.Data.Length < 2 || value.Data.Length > 1024 || value.Data.Length % 2 != 0)
@@ -162,26 +165,46 @@ public sealed class BootLogoRegistration
         if (result.Distinct().Count() != result.Length) throw new InvalidDataException("BootOrder 包含重复项。");
         return result;
     }
-    public sealed record Plan(ushort Number, ushort WindowsNumber, FirmwareValue OriginalOrder, FirmwareValue WindowsEntry, FirmwareValue NewEntry);
+    public sealed record Plan(ushort Number, ushort WindowsNumber, FirmwareValue OriginalOrder, FirmwareValue WindowsEntry, FirmwareValue NewEntry,
+        Dictionary<ushort, FirmwareValue>? PreservedEntries = null);
+    // Insyde's generic removable/network choices have an End-only device path and RC options.
+    // Exact bytes + fixed IDs + verified manufacturer: a matching label alone is insufficient.
+    internal static string? InsydeDevice(ushort number, FirmwareValue value)
+    {
+        string? label = number switch { 0x2001 => "EFI USB Device", 0x2002 => "EFI DVD/CDROM", 0x2003 => "EFI Network", _ => null };
+        if (label == null || value.Attributes != 7) return null;
+        byte[] expected = new byte[] { 1, 0, 0, 0, 4, 0 }.Concat(Encoding.Unicode.GetBytes(label + "\0"))
+            .Concat(new byte[] { 0x7f, 0xff, 4, 0, 0x52, 0x43 }).ToArray();
+        return value.Data.SequenceEqual(expected) ? label : null;
+    }
+    private bool IsInsyde => firmwareManufacturer.Trim().Equals("INSYDE Corp.", StringComparison.OrdinalIgnoreCase);
+    private bool PreserveDevice(ushort id, FirmwareValue value, Dictionary<ushort, FirmwareValue> preserved)
+    {
+        if (!IsInsyde || InsydeDevice(id, value) == null) return false;
+        preserved[id] = new FirmwareValue(value.Attributes, value.Data.ToArray()); return true;
+    }
     public string Inspect()
     {
         var order = Order(firmware.Read("BootOrder"));
         var current = firmware.Read("BootCurrent");
         ushort? active = current?.Data.Length == 2 ? BitConverter.ToUInt16(current.Data) : null;
-        var numbers = order.Concat(Enumerable.Range(0, 256).Select(i => (ushort)i));
+        var numbers = order.Concat(Enumerable.Range(0, 256).Select(i => (ushort)i)).Concat(new ushort[] { 0x2001, 0x2002, 0x2003 });
         if (active != null) numbers = numbers.Append(active.Value);
         var lines = new List<string> { "只读固件启动项报告", "BootOrder：" + string.Join(" → ", order.Select(Name)),
-            "BootCurrent：" + (active == null ? "未知" : Name(active.Value)), "读取范围：BootOrder、本次 BootCurrent 和 Boot0000–Boot00FF。",
+            "BootCurrent：" + (active == null ? "未知" : Name(active.Value)), "固件厂商：" + (firmwareManufacturer.Length == 0 ? "未知" : firmwareManufacturer),
+            "读取范围：BootOrder、本次 BootCurrent、Boot0000–Boot00FF 和 Boot2001–Boot2003。",
             "名称仅作说明，不作为安装或删除依据。" };
         foreach (ushort id in numbers.Distinct())
         {
             var value = firmware.Read(Name(id));
             if (value == null) { if (order.Contains(id)) lines.Add("\n" + Name(id) + "：启动顺序中引用的项缺失"); continue; }
             lines.Add("\n" + Name(id) + (order.Contains(id) ? "（在启动顺序中）" : "（未列入启动顺序）") +
-                (active == id ? " · 本次启动" : "") + "\n  " + BootLogoEntry.Describe(value.Data) +
+                (active == id ? " · 本次启动" : "") + "\n  " +
+                (IsInsyde && InsydeDevice(id, value) is string device ? device + " · 已核验 Insyde 通用设备入口（完整字节匹配；将原样保留）" : BootLogoEntry.Describe(value.Data)) +
+                "\n  变量属性：0x" + value.Attributes.ToString("X") +
                 "\n  数据 SHA-256：" + BootLogoPackage.Hash(value.Data));
         }
-        lines.Add("\n额外项可能是 USB、网络、厂商功能，也可能是其他系统。当前版本只支持单 Windows 启动项，不能安全确认时停止；请勿删除启动项绕过检查。");
+        lines.Add("\n支持当前默认的单 Windows 启动项及已核验的 Insyde 通用设备入口；其他系统、旧 Logo 或未知路径仍停止。请勿删除启动项绕过检查。");
         return string.Join("\n", lines);
     }
     public Plan Prepare(Guid partition)
@@ -194,13 +217,23 @@ public sealed class BootLogoRegistration
             throw new InvalidDataException("当前启动项不是默认的 Windows 启动项，拒绝自动安装。");
         var windows = firmware.Read(Name(order[0])) ?? throw new InvalidDataException("默认启动项缺失。");
         byte[] logo = BootLogoEntry.Create(windows.Data, partition);
+        var preserved = new Dictionary<ushort, FirmwareValue>();
         foreach (ushort id in order.Skip(1))
         {
             var value = firmware.Read(Name(id));
             if (value == null) throw new InvalidDataException("启动顺序存在缺失项。");
+            if (PreserveDevice(id, value, preserved)) continue;
             // Unknown device paths / another OS are deliberately unsupported in the first release.
             throw new InvalidDataException("当前版本尚不支持额外固件启动项 " + Name(id) + "：" + BootLogoEntry.Describe(value.Data) +
                 "\n请查看启动项详情。额外项不一定代表双系统，请勿删除它来绕过检查。");
+        }
+        // These firmware-managed slots may exist without appearing in BootOrder.
+        foreach (ushort id in new ushort[] { 0x2001, 0x2002, 0x2003 })
+        {
+            if (order.Contains(id)) continue;
+            var value = firmware.Read(Name(id));
+            if (value != null && !PreserveDevice(id, value, preserved))
+                throw new InvalidDataException("未引用的固件设备项 " + Name(id) + " 不符合已验证的 Insyde 格式，请查看启动项详情；不要删除它绕过检查。");
         }
         ushort? free = null;
         for (ushort id = 0; id < 256; id++)
@@ -213,24 +246,27 @@ public sealed class BootLogoRegistration
                 "\n无法确认是否为厂商功能、其他系统或旧 HackBGRT；请查看详情，不要删除它来绕过检查。");
         }
         if (free == null) throw new InvalidDataException("没有可用的 EFI 启动项槽位。");
-        var plan = new Plan(free.Value, order[0], original, windows, new FirmwareValue(7, logo));
+        var plan = new Plan(free.Value, order[0], original, windows, new FirmwareValue(7, logo), preserved);
         ValidatePlan(plan); return plan;
     }
     public void Apply(Plan plan)
     {
         ValidatePlan(plan);
         AssertWindows(plan);
+        AssertPreserved(plan);
         if (!Equal(firmware.Read("BootOrder"), plan.OriginalOrder) || firmware.Read(Name(plan.Number)) != null)
             throw new InvalidDataException("安装前固件状态已变化，请重新检查。");
         firmware.Write(Name(plan.Number), plan.NewEntry);
         if (!Equal(firmware.Read(Name(plan.Number)), plan.NewEntry)) throw new IOException("新启动项读回校验失败。");
         AssertWindows(plan);
+        AssertPreserved(plan);
         if (!Equal(firmware.Read("BootOrder"), plan.OriginalOrder)) throw new IOException("启动顺序被其他程序改变。");
         var appended = plan.OriginalOrder.Data.Concat(BitConverter.GetBytes(plan.Number)).ToArray();
         var target = new FirmwareValue(plan.OriginalOrder.Attributes, appended);
         firmware.Write("BootOrder", target);
         if (!Equal(firmware.Read("BootOrder"), target)) throw new IOException("启动顺序读回校验失败。");
         AssertWindows(plan);
+        AssertPreserved(plan);
     }
     public void Restore(Plan plan)
     {
@@ -260,6 +296,13 @@ public sealed class BootLogoRegistration
         AssertWindows(plan);
     }
     private void AssertWindows(Plan p) { if (!Equal(firmware.Read(Name(p.WindowsNumber)), p.WindowsEntry)) throw new InvalidDataException("Windows 启动项已变化，停止修改。"); }
+    private void AssertPreserved(Plan p)
+    {
+        if (p.PreservedEntries is not { Count: > 0 }) return;
+        if (!IsInsyde) throw new InvalidDataException("无法重新确认固件厂商，停止修改。");
+        foreach (var pair in p.PreservedEntries)
+            if (!Equal(firmware.Read(Name(pair.Key)), pair.Value)) throw new InvalidDataException("已核验设备入口 " + Name(pair.Key) + " 已变化，请重新检查。");
+    }
     private static void ValidatePlan(Plan p)
     {
         var order = Order(p.OriginalOrder);
@@ -268,6 +311,10 @@ public sealed class BootLogoRegistration
             p.OriginalOrder.Attributes != 7 || p.WindowsEntry.Attributes != 7 || p.NewEntry.Attributes != 7 ||
             !p.NewEntry.Data.SequenceEqual(BootLogoEntry.Create(p.WindowsEntry.Data, windows.Partition)))
             throw new InvalidDataException("启动项计划与原始备份不一致。");
+        var preserved = p.PreservedEntries ?? new Dictionary<ushort, FirmwareValue>();
+        if (preserved.Any(pair => pair.Key == p.Number || pair.Key == p.WindowsNumber || InsydeDevice(pair.Key, pair.Value) == null) ||
+            order.Skip(1).Any(id => !preserved.ContainsKey(id)))
+            throw new InvalidDataException("设备入口备份与已核验结构不一致。");
     }
     public static bool Equal(FirmwareValue? a, FirmwareValue? b) => a == null || b == null ? a == b : a.Attributes == b.Attributes && a.Data.SequenceEqual(b.Data);
     public static string Name(ushort id) => "Boot" + id.ToString("X4");

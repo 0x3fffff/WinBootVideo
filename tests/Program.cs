@@ -16,9 +16,16 @@ string work = Path.Combine(Path.GetTempPath(), "WinBootVideo-checks-" + Guid.New
 Directory.CreateDirectory(work);
 try
 {
+    if (args.Length == 1 && args[0] == "--insyde-entries-only")
+    {
+        BootLogoChecks.RunInsydeEntries(Check);
+        Console.WriteLine($"{checks} Insyde entry checks passed. Exact captured structures, fake firmware only.");
+        return;
+    }
     if (args.Length >= 1 && args.Length <= 3 && args[0] == "--boot-logo-only")
     {
         BootLogoChecks.RunSafety(Check);
+        BootLogoChecks.RunInsydeEntries(Check);
         await BootLogoChecks.RunTransaction(Check);
         await BootLogoChecks.RunGui(Check, work);
         if (args.Length >= 2) await BootLogoChecks.RunOfficialCopy(args[1], Check, work);

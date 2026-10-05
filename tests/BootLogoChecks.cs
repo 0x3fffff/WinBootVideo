@@ -55,6 +55,105 @@ internal static class BootLogoChecks
     {
         bool rejected = false; try { action(); } catch { rejected = true; } check(rejected, name);
     }
+    private static readonly (ushort Number, string Raw, string Hash)[] InsydeEntries = {
+        (0x2001, "AQAAAAQARQBGAEkAIABVAFMAQgAgAEQAZQB2AGkAYwBlAAAAf/8EAFJD", "0c7c99b95a506ed44fb0816181e8e3a3a02d28c14df69d7e440b1ca64fef8c74"),
+        (0x2002, "AQAAAAQARQBGAEkAIABEAFYARAAvAEMARABSAE8ATQAAAH//BABSQw==", "2acfbd80332f202797d5cef9f3be599db9ed7fa826c7c8dbbb216f813a1d74b1"),
+        (0x2003, "AQAAAAQARQBGAEkAIABOAGUAdAB3AG8AcgBrAAAAf/8EAFJD", "fb1bc2fbbbf7e3cc3ab77af1eb4f0fe772dace6b26c7bad60b66fc1f9d54babe")
+    };
+    private static FakeFirmware InsydeFirmware()
+    {
+        var firmware = new FakeFirmware(); firmware.Values["Boot0002"] = firmware.Values["Boot0005"]; firmware.Values.Remove("Boot0005");
+        firmware.Values["BootCurrent"] = new(6, BitConverter.GetBytes((ushort)2));
+        firmware.Values["BootOrder"] = new(7, new ushort[] { 2, 0x2001, 0x2002, 0x2003 }.SelectMany(BitConverter.GetBytes).ToArray());
+        foreach (var entry in InsydeEntries) firmware.Values[BootLogoRegistration.Name(entry.Number)] = new(7, Convert.FromBase64String(entry.Raw));
+        return firmware;
+    }
+    public static void RunInsydeEntries(Action<bool, string> check)
+    {
+        foreach (var entry in InsydeEntries)
+            check(BootLogoPackage.Hash(Convert.FromBase64String(entry.Raw)) == entry.Hash, "夹具完整字节与用户只读报告 SHA-256 相同：" + BootLogoRegistration.Name(entry.Number));
+        var firmware = InsydeFirmware(); var registration = new BootLogoRegistration(firmware, "INSYDE Corp.");
+        BootLogoRegistration.Plan? plan = null; string error = "";
+        try { plan = registration.Prepare(Partition); } catch (InvalidDataException ex) { error = ex.Message; }
+        check(plan != null, "当前 Windows 加三个固件通用设备入口不应误拦安装计划：" + error);
+        check(firmware.Writes.Count == 0, "通用设备入口支持的计划检查仍为零写入");
+        var originalOrder = firmware.Read("BootOrder")!; var originals = InsydeEntries.ToDictionary(e => e.Number, e => firmware.Read(BootLogoRegistration.Name(e.Number))!);
+        registration.Apply(plan!);
+        check(BootLogoRegistration.Order(firmware.Read("BootOrder")).SequenceEqual(new ushort[] { 2, 0x2001, 0x2002, 0x2003, plan!.Number }),
+            "保留 Windows 默认和 USB / 光驱 / 网络相对顺序，只追加 Logo 项");
+        check(InsydeEntries.All(e => BootLogoRegistration.Equal(firmware.Read(BootLogoRegistration.Name(e.Number)), originals[e.Number])) &&
+            firmware.Writes.SequenceEqual(new[] { BootLogoRegistration.Name(plan!.Number), "BootOrder" }), "不写入、不删除、不覆盖三个通用设备启动项");
+        registration.Restore(plan!);
+        check(BootLogoRegistration.Equal(firmware.Read("BootOrder"), originalOrder) && InsydeEntries.All(e => BootLogoRegistration.Equal(firmware.Read(BootLogoRegistration.Name(e.Number)), originals[e.Number])),
+            "恢复只移除自己的 Logo，通用设备入口字节与原顺序保留");
+        Reject(() => new BootLogoRegistration(InsydeFirmware()).Prepare(Partition), check, "固件厂商未知时不套用 Insyde 设备入口规则");
+        Reject(() => new BootLogoRegistration(InsydeFirmware(), "Other firmware").Prepare(Partition), check, "非 Insyde 厂商不套用专用设备入口规则");
+        check(registration.Inspect().Contains("已核验 Insyde 通用设备入口"), "只读详情明确区分已核验的设备入口与未知路径");
+        var serialized = System.Text.Json.JsonSerializer.Serialize(plan, Settings.JsonOptions);
+        var roundTrip = System.Text.Json.JsonSerializer.Deserialize<BootLogoRegistration.Plan>(serialized, Settings.JsonOptions)!;
+        check(roundTrip.PreservedEntries?.Count == 3 && InsydeEntries.All(e => BootLogoRegistration.Equal(roundTrip.PreservedEntries[e.Number], originals[e.Number])),
+            "恢复记录 JSON 保留三个完整设备入口快照，数字键往返正确");
+        var malformedPlan = InsydeFirmware();
+        Reject(() => new BootLogoRegistration(malformedPlan, "INSYDE Corp.").Apply(roundTrip with { PreservedEntries = null }), check, "多入口计划丢失设备备份时不写入固件");
+        check(malformedPlan.Writes.Count == 0, "损坏设备备份计划拒绝发生在所有写入之前");
+        foreach (var entry in InsydeEntries)
+        {
+            foreach (string mutation in new[] { "inactive", "hidden", "path-size", "end-type", "end-subtype", "end-size", "arguments", "extra-data", "variable-attributes" })
+            {
+                var bad = InsydeFirmware(); byte[] raw = Convert.FromBase64String(entry.Raw);
+                switch (mutation)
+                {
+                    case "inactive": raw[0] = 0; break;
+                    case "hidden": raw[0] = 9; break;
+                    case "path-size": raw[4] = 0; break;
+                    case "end-type": raw[^6] = 4; break;
+                    case "end-subtype": raw[^5] = 1; break;
+                    case "end-size": raw[^4] = 6; break;
+                    case "arguments": raw[^1] ^= 1; break;
+                    case "extra-data": raw = raw.Concat(new byte[] { 0 }).ToArray(); break;
+                }
+                bad.Values[BootLogoRegistration.Name(entry.Number)] = new(mutation == "variable-attributes" ? 6u : 7u, raw);
+                Reject(() => new BootLogoRegistration(bad, "INSYDE Corp.").Prepare(Partition), check,
+                    "同名固件入口数据不符合已核验结构时阻止：" + BootLogoRegistration.Name(entry.Number) + " / " + mutation);
+                check(bad.Writes.Count == 0, "不明同名项没有写入：" + BootLogoRegistration.Name(entry.Number) + " / " + mutation);
+            }
+        }
+        var swapped = InsydeFirmware(); swapped.Values["Boot2001"] = swapped.Values["Boot2002"];
+        Reject(() => new BootLogoRegistration(swapped, "INSYDE Corp.").Prepare(Partition), check, "通用设备完整数据与固定编号不一致也不能放行");
+        var unknownSlot = InsydeFirmware(); unknownSlot.Values["Boot2004"] = unknownSlot.Values["Boot2001"];
+        unknownSlot.Values["BootOrder"] = new(7, unknownSlot.Read("BootOrder")!.Data.Concat(BitConverter.GetBytes((ushort)0x2004)).ToArray());
+        Reject(() => new BootLogoRegistration(unknownSlot, "INSYDE Corp.").Prepare(Partition), check, "相同通用数据出现在未知编号时仍阻止，不扩大到所有 Boot200x");
+        var namedLoader = InsydeFirmware();
+        using (var output = new MemoryStream())
+        using (var writer = new BinaryWriter(output))
+        {
+            var nodes = BootLogoEntry.Parse(WindowsEntry()).Nodes;
+            writer.Write(1u); writer.Write((ushort)nodes.Sum(n => n.Length)); writer.Write(Encoding.Unicode.GetBytes("EFI USB Device\0"));
+            foreach (var node in nodes) writer.Write(node);
+            namedLoader.Values["Boot2001"] = new(7, output.ToArray());
+        }
+        Reject(() => new BootLogoRegistration(namedLoader, "INSYDE Corp.").Prepare(Partition), check, "同名 USB 项包含实际磁盘和 EFI 文件路径时仍阻止，标签不能授权");
+        var orphaned = InsydeFirmware(); orphaned.Values["BootOrder"] = new(7, BitConverter.GetBytes((ushort)2));
+        var orphanReg = new BootLogoRegistration(orphaned, "INSYDE Corp."); var orphanPlan = orphanReg.Prepare(Partition); orphanReg.Apply(orphanPlan);
+        check(orphanPlan.PreservedEntries?.Count == 3 && BootLogoRegistration.Order(orphaned.Read("BootOrder")).SequenceEqual(new ushort[] { 2, orphanPlan.Number }),
+            "未列入 BootOrder 的已知设备入口也保留，不擅自加入启动顺序"); orphanReg.Restore(orphanPlan);
+        var changedDevice = InsydeFirmware(); var changedReg = new BootLogoRegistration(changedDevice, "INSYDE Corp."); var changedPlan = changedReg.Prepare(Partition);
+        changedDevice.Values["Boot2001"] = new(7, WindowsEntry());
+        Reject(() => changedReg.Apply(changedPlan), check, "检查后设备入口被其他工具修改时阻止安装");
+        check(changedDevice.Writes.Count == 0, "设备入口变化在首次固件写入前被发现");
+        foreach (int fail in new[] { 1, 2 })
+        {
+            var failed = InsydeFirmware(); var failedReg = new BootLogoRegistration(failed, "INSYDE Corp."); var failedPlan = failedReg.Prepare(Partition); failed.FailAt = fail;
+            Reject(() => failedReg.Apply(failedPlan), check, "带通用设备入口的注册失败明确报错：" + fail); failed.FailAt = 0; failedReg.Restore(failedPlan);
+            check(BootLogoRegistration.Equal(failed.Read("BootOrder"), originalOrder) && InsydeEntries.All(e => BootLogoRegistration.Equal(failed.Read(BootLogoRegistration.Name(e.Number)), originals[e.Number])),
+                "带通用设备入口的注册失败撤销后保留原入口与顺序：" + fail);
+        }
+        var later = InsydeFirmware(); var laterReg = new BootLogoRegistration(later, "INSYDE Corp."); var laterPlan = laterReg.Prepare(Partition); laterReg.Apply(laterPlan);
+        later.Values["Boot2001"] = new(7, WindowsEntry());
+        new BootLogoRegistration(later).Restore(laterPlan);
+        check(later.Read("Boot2001")!.Data.SequenceEqual(WindowsEntry()) && BootLogoRegistration.Equal(later.Read("BootOrder"), originalOrder),
+            "恢复不覆盖后来被其他工具修改的设备项，不因厂商未知而阻止移除自身 Logo");
+    }
     public static void RunSafety(Action<bool, string> check)
     {
         var env = new BootLogoEnvironment { Administrator = true, Uefi = true, X64 = true, SecureBoot = true, OsFullyDecrypted = true,
@@ -266,9 +365,12 @@ internal static class BootLogoChecks
     }
     public static async Task RunTransaction(Action<bool, string> check)
     {
+        foreach (bool withDevices in new[] { false, true })
         foreach (string failure in new[] { "none", "initial-backup", "copy", "verify", "verified-backup", "entry-write", "order-write", "final-backup" })
         {
-            var firmware = new FakeFirmware(); var registration = new BootLogoRegistration(firmware); var plan = registration.Prepare(Partition);
+            var firmware = withDevices ? InsydeFirmware() : new FakeFirmware();
+            var registration = new BootLogoRegistration(firmware, withDevices ? "INSYDE Corp." : ""); var plan = registration.Prepare(Partition);
+            var originalOrder = firmware.Read("BootOrder");
             var journal = new BootLogoJournal { Plan = plan };
             int saved = 0, copyCalls = 0; bool rejected = false;
             if (failure == "entry-write") firmware.FailAt = 1;
@@ -286,14 +388,16 @@ internal static class BootLogoChecks
                     copyCalls++;
                     if (failure == "copy" || failure == "verify") throw new IOException("injected " + failure + " failure");
                     return Task.FromResult(new Dictionary<string, string> { ["splash.bmp"] = "fake-verified" });
-                }, () => { if (!firmware.Read("Boot0005")!.Data.SequenceEqual(WindowsEntry())) throw new Exception("Windows changed"); });
+                }, () => { if (!firmware.Read(BootLogoRegistration.Name(plan.WindowsNumber))!.Data.SequenceEqual(WindowsEntry())) throw new Exception("Windows changed"); });
             }
             catch { rejected = true; }
-            check(rejected == (failure != "none"), "真实生产事务成功 / 失败返回与阶段匹配：" + failure);
+            check(rejected == (failure != "none"), "真实生产事务成功 / 失败返回与阶段匹配：" + failure + " / Insyde=" + withDevices);
             if (failure == "none")
-                check(journal.Phase == "Installed" && BootLogoRegistration.Order(firmware.Read("BootOrder"))[0] == 5, "完整事务成功且原 Windows 保持默认");
+                check(journal.Phase == "Installed" && BootLogoRegistration.Order(firmware.Read("BootOrder"))[0] == plan.WindowsNumber, "完整事务成功且原 Windows 保持默认");
             else
-                check(firmware.Read(BootLogoRegistration.Name(plan.Number)) == null && BootLogoRegistration.Order(firmware.Read("BootOrder")).SequenceEqual(new ushort[] { 5 }), "生产事务异常撤销自己的启动项，原 Windows 默认不变：" + failure);
+                check(firmware.Read(BootLogoRegistration.Name(plan.Number)) == null && BootLogoRegistration.Equal(firmware.Read("BootOrder"), originalOrder), "生产事务异常撤销自己的启动项，原 Windows 默认不变：" + failure);
+            if (withDevices) check(InsydeEntries.All(e => firmware.Read(BootLogoRegistration.Name(e.Number))!.Data.SequenceEqual(Convert.FromBase64String(e.Raw))),
+                "生产事务所有成功 / 异常路径保留 Insyde 设备入口字节：" + failure);
             if (failure == "initial-backup") check(copyCalls == 0 && firmware.Writes.Count == 0, "原始备份无法落盘时不复制 EFI 文件，也不注册启动项");
             if (failure is "copy" or "verify" or "verified-backup") check(firmware.Writes.Count == 0, "文件复制 / 校验 / 二次备份失败时从未写入固件：" + failure);
         }

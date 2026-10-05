@@ -58,7 +58,7 @@ public static class BootLogoInstaller
             {
                 try
                 {
-                    var registration = new BootLogoRegistration(new BootLogoNativeFirmware());
+                    var registration = new BootLogoRegistration(new BootLogoNativeFirmware(), environment.FirmwareManufacturer);
                     environment.FirmwareDetails = registration.Inspect();
                     registration.Prepare(Guid.Parse(environment.EspPartitionGuid));
                 }
@@ -131,7 +131,7 @@ public static class BootLogoInstaller
         }
         BootLogoImage.Validate(bmp);
         if (BootLogoPackage.Hash(bmp) != request.ImageHash) throw new IOException("图片在确认后发生变化，请重新转换。");
-        var firmware = new BootLogoNativeFirmware(); var registration = new BootLogoRegistration(firmware);
+        var firmware = new BootLogoNativeFirmware(); var registration = new BootLogoRegistration(firmware, env.FirmwareManufacturer);
         var plan = registration.Prepare(Guid.Parse(env.EspPartitionGuid));
         string esp = env.EspVolume;
         string windows = Path.Combine(esp, @"EFI\Microsoft\Boot\bootmgfw.efi");

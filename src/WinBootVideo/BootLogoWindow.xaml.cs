@@ -113,6 +113,7 @@ public partial class BootLogoWindow : Window
         environment = response.Environment; probePassed = response.Success;
         HardwareText.Text = environment == null ? response.Message :
             environment.Model + "\nUEFI x64：" + (environment.Uefi && environment.X64 ? "是" : "否 / 未知") +
+            " · 固件：" + (environment.FirmwareManufacturer.Length == 0 ? "未知" : environment.FirmwareManufacturer) +
             " · 安全启动：" + (environment.SecureBoot == null ? "未知" : environment.SecureBoot.Value ? "开（使用 shim）" : "关") +
             "\n系统盘：" + (environment.OsFullyDecrypted == true ? "未加密" : "已加密 / 未知") + " · EFI 分区：" + environment.EspCount +
             " · 可用：" + (environment.EspFreeBytes == null ? "未知" : environment.EspFreeBytes.Value / (1024 * 1024) + " MB") +

@@ -12,6 +12,10 @@ HackBGRT 在运行时更新 BGRT 并继续引导 Windows，不能消除它启动
 
 2026-10-06 的 0.2.1 补充只读启动项报告与按钮禁用条件。既有报告证实目标电脑通过硬件检查但被额外项阻止；额外项类型仍未知，不能以此断言双系统，也不能仅凭 USB / 厂商名称放行。原阻止规则保留，新增编号、名称、可解析路径与分区详情供后续核对；本次没有真实 UEFI 安装或启动验证。Windows 加载阶段的七彩虹 Logo 属于可替换的 BGRT 范围，通电时的第一张固件图不属于本软件功能。
 
+同日 0.2.2 根据新报告修复 Insyde 通用设备入口的误拦截。Boot2001（USB）、Boot2002（光驱）、Boot2003（网络）的完整重建数据与用户报告 SHA-256 一致，CIM 确认厂商为 INSYDE Corp.。[UEFI 官网发布的 Insyde 演示](https://uefi.org/sites/default/files/resources/UEFI_Plugfest_Implementing_Secure_Boot_Insyde_March_2013.pdf)（2013 年，第 17 页）将这些项列为 NULL 路径，并显示活动属性 1、路径长度 4、End-Of-DP、OptionalData=5243（RC）。这是厂商通用入口格式，不能当成所有 UEFI 厂商的通用标准，也不能仅靠 Boot2001 编号或 USB 名称判断安全。
+
+允许规则限于已验证厂商、固定编号 / 名称、变量属性 7 及完整数据相同；没有实际磁盘 / EFI 文件目标。真实文件启动项、数据不符或其他厂商仍停止。原始入口保存为快照并在写前及读回后检查，安装 / 恢复不写这些项，保留它们的顺序与后来外部变更；仅追加 / 移除自己的 Logo。重放从红到绿，最终 432 项隔离回归通过，没有将此结果等同于真实 UEFI 启动安全验证。
+
 ## 调用边界
 
 原版 EnableBCDEdit 的若干 /set 命令没有检查失败返回；DisableBCDEdit 按输出是否含 HackBGRT 判断归属，无法满足本应用的准确凭据要求。因此不调用 enable-*、disable-*、uninstall、覆盖引导器或 allow-* 参数，只调用固定的 `batch is-elevated install arch=x64 esp=<已确认卷 GUID>` 文件安装。

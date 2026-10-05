@@ -74,9 +74,10 @@ public static class BootLogoProbe
     // Fixed script: no user values are interpolated and no encryption keys are queried.
     private const string Script = """
 $ErrorActionPreference='Stop'
-$result=[ordered]@{Administrator=$true; Uefi=$true; X64=([Environment]::Is64BitOperatingSystem -and $env:PROCESSOR_ARCHITECTURE -eq 'AMD64'); SecureBoot=$null; OsFullyDecrypted=$null; EspCount=0; EspOnOsDisk=$false; EspVolume=''; EspPartitionGuid=''; Model=''; Error=''; CheckedUtc=[DateTime]::UtcNow.ToString('o')}
+$result=[ordered]@{Administrator=$true; Uefi=$true; X64=([Environment]::Is64BitOperatingSystem -and $env:PROCESSOR_ARCHITECTURE -eq 'AMD64'); SecureBoot=$null; OsFullyDecrypted=$null; EspCount=0; EspOnOsDisk=$false; EspVolume=''; EspPartitionGuid=''; Model=''; FirmwareManufacturer=''; Error=''; CheckedUtc=[DateTime]::UtcNow.ToString('o')}
 try {
   $result.Model=(Get-CimInstance Win32_ComputerSystem).Manufacturer+' '+(Get-CimInstance Win32_ComputerSystem).Model
+  $result.FirmwareManufacturer=(Get-CimInstance Win32_BIOS).Manufacturer
   $result.SecureBoot=Confirm-SecureBootUEFI
   $osDrive=[IO.Path]::GetPathRoot($env:WINDIR).Substring(0,2)
   $os=Get-Partition -DriveLetter $osDrive.Substring(0,1)
