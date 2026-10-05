@@ -58,6 +58,10 @@ public partial class MainWindow : Window
         FilePathText.Text = string.IsNullOrEmpty(settings.VideoPath) ? "尚未选择视频" : settings.VideoPath;
         FilePathText.ToolTip = settings.VideoPath;
     }
+    private void BootLogoClick(object sender, RoutedEventArgs e)
+    {
+        if (!busy) new BootLogoWindow(paths) { Owner = this }.ShowDialog();
+    }
     private void RefreshTools()
     {
         string? ffmpeg = MediaTools.FindTool("ffmpeg", settings.FfmpegPath);
@@ -122,12 +126,12 @@ public partial class MainWindow : Window
     private async Task WorkAsync(string message, Func<CancellationToken, Task> action)
     {
         if (busy) return;
-        busy = true; operation = new CancellationTokenSource(); Editor.IsEnabled = false; ActionButtons.IsEnabled = false; RestoreButton.IsEnabled = false;
+        busy = true; operation = new CancellationTokenSource(); Editor.IsEnabled = false; ActionButtons.IsEnabled = false; RestoreButton.IsEnabled = false; BootLogoButton.IsEnabled = false;
         BusyBar.Visibility = Visibility.Visible; CancelButton.Visibility = Visibility.Visible; StatusText.Text = message;
         try { await action(operation.Token); }
         catch (OperationCanceledException) { StatusText.Text = "操作已取消。"; }
         catch (Exception ex) { StatusText.Text = "操作失败：" + ex.Message; App.Log(paths, ex); }
-        finally { busy = false; operation.Dispose(); operation = null; Editor.IsEnabled = true; ActionButtons.IsEnabled = true; BusyBar.Visibility = Visibility.Collapsed; CancelButton.Visibility = Visibility.Collapsed; RefreshTools(); RefreshStartup(); }
+        finally { busy = false; operation.Dispose(); operation = null; Editor.IsEnabled = true; ActionButtons.IsEnabled = true; BootLogoButton.IsEnabled = true; BusyBar.Visibility = Visibility.Collapsed; CancelButton.Visibility = Visibility.Collapsed; RefreshTools(); RefreshStartup(); }
     }
     private string Tool(string name)
     {

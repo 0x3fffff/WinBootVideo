@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using System.Text.Json;
 using WinBootVideo.Core;
 
 namespace WinBootVideo;
@@ -16,6 +17,32 @@ public partial class App : Application
     {
         base.OnStartup(e);
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        if (Arguments.Has(e.Args, "--boot-logo-helper"))
+        {
+            int code = 30;
+            try
+            {
+                if (e.Args.Length != 3 || e.Args[0] != "--boot-logo-helper") throw new InvalidDataException("Logo 管理员参数无效。");
+                string input = Path.GetFullPath(e.Args[1]), output = Path.GetFullPath(e.Args[2]);
+                string directory = Path.GetDirectoryName(input)!;
+                if (input.StartsWith(@"\\", StringComparison.Ordinal) || Path.GetFileName(input) != "request.json" || Path.GetFileName(output) != "response.json" ||
+                    Path.GetDirectoryName(output) != directory || !Directory.Exists(directory) || File.Exists(output))
+                    throw new InvalidDataException("Logo 请求目录或报告文件不安全。");
+                BootLogoPaths.OrdinaryDirectory(directory);
+                if ((File.GetAttributes(input) & FileAttributes.ReparsePoint) != 0 || new FileInfo(input).Length > 16384) throw new InvalidDataException("Logo 请求无效。");
+                BootLogoResponse result;
+                try
+                {
+                    var request = JsonSerializer.Deserialize<BootLogoRequest>(File.ReadAllText(input), Settings.JsonOptions) ?? throw new InvalidDataException("Logo 请求为空。");
+                    result = await BootLogoInstaller.ExecuteAsync(request); code = result.Success ? 0 : 30;
+                }
+                catch (Exception ex) { result = new BootLogoResponse { Success = false, Message = ex.Message }; }
+                using var file = new FileStream(output, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                JsonSerializer.Serialize(file, result, Settings.JsonOptions);
+            }
+            catch { /* Malformed helper requests never create files elsewhere or open a dialog. */ }
+            Shutdown(code); return;
+        }
         var paths = new AppPaths(Arguments.Value(e.Args, "--data-dir"));
         DispatcherUnhandledException += (_, exception) =>
         {
@@ -38,7 +65,7 @@ public partial class App : Application
                 if (!startup.HasOwnedStartup(sid)) throw new InvalidOperationException("此命令仅修复已有登录动画；首次启用请使用 GUI。");
                 startup.EnableStrict(sid);
                 string? report = Arguments.Value(e.Args, "--startup-report");
-                if (report != null) AtomicJson.Write(report, new { version = "0.1.6", enabled = startup.IsStrictEnabled(sid), strictBeforeDesktop = true });
+                if (report != null) AtomicJson.Write(report, new { version = "0.2.0", enabled = startup.IsStrictEnabled(sid), strictBeforeDesktop = true });
                 Shutdown(startup.IsStrictEnabled(sid) ? 0 : 30);
                 return;
             }
@@ -50,6 +77,13 @@ public partial class App : Application
                 player.Show();
                 LogPhase(paths, "window-show-returned");
                 return;
+            }
+            if (Arguments.Value(e.Args, "--render-logo-ui") is string logoRender)
+            {
+                var logoWindow = new BootLogoWindow(paths);
+                if (Arguments.Value(e.Args, "--logo-image") is string logoImage) logoWindow.SelectImage(logoImage);
+                if (Arguments.Has(e.Args, "--logo-scroll-bottom")) ((System.Windows.Controls.ScrollViewer)logoWindow.FindName("LogoScroll")).ScrollToBottom();
+                RenderWindow(logoWindow, logoRender, 1000, 740); Shutdown(); return;
             }
             var window = new MainWindow(paths);
             string? initialVideo = Arguments.Value(e.Args, "--video");
@@ -81,6 +115,20 @@ public partial class App : Application
             if (!Arguments.Has(e.Args, "--player") && !Arguments.Has(e.Args, "--repair-startup")) MessageBox.Show(ex.Message, "WinBootVideo", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(30);
         }
+    }
+    private void RenderWindow(Window window, string outputPath, int width, int height)
+    {
+        var root = (FrameworkElement)window.Content;
+        root.Measure(new Size(width, height)); root.Arrange(new Rect(0, 0, width, height)); root.UpdateLayout();
+        Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        root.Measure(new Size(width, height)); root.Arrange(new Rect(0, 0, width, height)); root.UpdateLayout();
+        var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+        var background = new DrawingVisual();
+        using (var drawing = background.RenderOpen()) drawing.DrawRectangle(window.Background ?? Brushes.White, null, new Rect(0, 0, width, height));
+        bitmap.Render(background); bitmap.Render(root);
+        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
+        using var output = File.Create(outputPath); encoder.Save(output);
     }
     public static void Log(AppPaths paths, Exception exception)
     {

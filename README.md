@@ -1,8 +1,46 @@
-# WinBootVideo 0.1.6
+# WinBootVideo 0.2.0
 
 Windows 11 的**登录后动画**工具。完成密码 / PIN / 图片密码验证、登录画面退场后，显示全屏视频，再淡出到桌面。0.1.6 采用桌面前模式：视频呈现后才允许本宿主启动 Explorer，覆盖层保持到动画淡出；不使用桌面出现后再播放的备用入口。每次登录播放一次，锁屏解锁不重复；注销后重新登录会再播放。
 
-这一版用 C# / WPF 编写，提供中文浅色 GUI，可选视频、检查、转码、预览、启用和恢复。初次运行不会更改登录配置。它不替换主板开机 Logo、Windows 引导动画或锁屏画面。
+这一版用 C# / WPF 编写，提供中文浅色 GUI，可选视频、检查、转码、预览、启用和恢复。初次运行不会更改登录配置。新增独立的“开机 Logo”向导，使用固定版本 HackBGRT 更换 UEFI 启动 Windows 时的静态 BGRT 图片；不刷主板固件，不替换 Windows 转圈动画或锁屏画面。
+
+## 开机 Logo（0.2.0 初版）
+
+在左侧点击“开机 Logo”，按“选图 → 导出准备包 → 管理员只读检查 → 恢复确认 → 安装”操作。登录视频与开机 Logo 的启用和恢复分别管理。普通界面和登录播放器继续使用普通权限；Logo 的检查、安装和恢复在单独辅助进程中申请 UAC。
+
+初版仅支持已经处于 UEFI x64、系统盘完全未加密、一个 EFI 系统分区且与 Windows 位于同一磁盘的环境；固件必须只有当前默认 Windows 启动项，不存在另一个系统、旧 HackBGRT 或不明额外项，也没有待执行的 BootNext。未知、加密（即使保护已暂停）、多分区或无法核实的配置会阻止安装。**不要为了绕过检查解密磁盘、删除其他启动项或关闭安全功能。**
+
+软件内置官方 [HackBGRT 2.6.0](https://github.com/Metabolix/HackBGRT/releases/tag/v2.6.0) ZIP，SHA-256 固定为 `6204911d777ac03e514b90126568ef6faa1d477779b31c536b142dba92f4a2c0`。管理员辅助进程重新检查硬件，将原始启动项、启动顺序及 Windows 启动器备份写入受管理员保护的 `%ProgramData%\WinBootVideo-BootLogo`，然后调用官方**仅安装文件**入口，核对全部六个 EFI 文件、图片像素和尺寸，再注册独立项到启动顺序末尾。原 Windows 启动项及启动器文件不写入，Windows Boot Manager 保持默认。未通过校验不会启用；失败尝试移除自己的项，撤销失败会明确报错并保留原始恢复记录。不会自动重启、修改 BCD、调用原版覆盖引导器选项，或整体导入旧备份。
+
+### 图片与转换
+
+EFI 分区必须有至少 20 MB 可用空间。空间不足或读不到时停止；软件不会删除其他 EFI 文件腾空间。
+
+| 项目 | 初版要求 / 处理 |
+|---|---|
+| 输入 | 本地静态 PNG、JPEG、BMP；最大 16 MB、2000 万像素、每边最多 8192 |
+| 推荐画布 | 320×180 或 256×256；最大 600×360，图案居中、背景黑 |
+| 转换 | 保留比例缩放，透明像素合成到黑底，补黑边 |
+| 输出 | 24 位未压缩 BMP3，54 字节头、正向高度，四字节行对齐 |
+| 固件显示 | 保留原固件分辨率，图像居中偏上；桌面预览仅作示意 |
+
+转换不需要 FFmpeg、Paint 或网络。导出后的 `splash.bmp`、`config.txt` 和恢复说明都是独立副本，删除原始图片不影响准备包。安装后还有 EFI 中的副本；保留准备包和恢复记录。主板通电后最早出现的厂商 Logo 可能仍短暂可见，HackBGRT 的 BGRT 替换从它被启动时才生效。
+
+### BIOS / UEFI 与首次验证
+
+1. 先准备可启动的 Windows 恢复 U 盘，把恢复说明保存到另一设备，确认现有帐户密码可用。GUI 不代替用户格式化 U 盘。
+2. 保持目前 UEFI、CSM、SATA、TPM 设置，不清空安全启动密钥；不要切换 Legacy 模式。进入固件可按微软的 [Windows 11 固件入口说明](https://support.microsoft.com/en-us/windows/security/devicesecurity/windows-11-and-secure-boot)，从“设置 → 系统 → 恢复 → 高级启动 → 疑难解答 → 高级选项 → UEFI 固件设置”手动重启进入。先保存工作，软件不会自动重启。
+3. 安装后查电脑厂商官方手册中的启动菜单键，**单次选择 HackBGRT**。此时 Windows Boot Manager 仍是默认。
+4. Secure Boot 已开启时保留它。根据官方 [shim 指引](https://github.com/Metabolix/HackBGRT/blob/v2.6.0/shim.md)，首次可能需在 MOKManager 中 `Enroll hash from disk → EFI → HackBGRT → grubx64.efi`。选择文件哈希，避免信任整张证书。MOK 重启后需再次单次选择 HackBGRT。若固件拒绝 shim，返回 Windows Boot Manager 并停止；本软件不提供关闭安全功能的绕过方式。
+5. 实际看到 Logo 且 Windows 登录正常后，才在固件 Boot Priority / Boot Order 中手动把 HackBGRT 放到第一位。先以“重启”验证；快速启动可能影响关机后开机的表现。
+
+启动链变化可能影响 Windows Hello / PIN 和依赖 TPM 的反作弊。初版阻止加密系统的安装，不读取恢复密钥。请结合微软的 [BitLocker 恢复说明](https://learn.microsoft.com/windows/security/operating-system-security/data-protection/bitlocker/recovery-overview) 了解启动链变化的影响，不能把“已暂停 BitLocker”误认为“未加密”。
+
+### Logo 恢复与验证边界
+
+试启动失败时，从固件启动菜单选择 Windows Boot Manager，进入 Windows 后点击“恢复原 Logo”。软件核实受保护的记录与当前项，只移除自己的 BootOrder 引用及独立项；保留 EFI Logo 文件，避免残留固件引用变为悬空文件路径。后续可凭相同恢复记录和文件哈希重新准备安装。外来项、文件变化、Windows 启动器变化或损坏记录会停止自动操作，不能拿旧备份覆盖当前 Windows。恢复记录与文件都仍可查阅。
+
+**此功能没有真实或虚拟 UEFI 首次启动验收，不能宣称所有固件兼容或绝无启动风险。** 自动检查覆盖模拟固件事务、失败撤销、BMP 字节与像素、GUI 按钮、辅助 CLI 拒绝路径，以及官方安装器在临时模拟 ESP 中的实际文件复制。开发过程中不改真实 EFI、NVRAM、BCD、Secure Boot、TPM 或加密设置，也不重启电脑。详细证据和限制见 [QA.md](QA.md) 与 [Logo 技术记录](research/boot-logo-integration.md)。
 
 0.1.2 修复视频在不可见桌面上提前播放、登录后只能看到结尾的问题：窗口渲染后先等待自己的桌面成为输入桌面，再从第 0 秒开始播放。输入图片密码或等待登录画面的时间不消耗视频加载与播放预算。新增实际非输入桌面回归及等待后从零播放验证，保留 0.1.1 的保存预览修复。未成功预览时“启用登录动画”保持不可用。
 

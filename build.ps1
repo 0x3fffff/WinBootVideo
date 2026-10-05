@@ -21,11 +21,14 @@ $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 & $compiler /nologo /target:winexe /platform:x64 /optimize+ "/out:$output\WinBootVideo.Host.exe" /r:System.Web.Extensions.dll /r:System.Xml.dll (Join-Path $taskRoot 'src\Host\Program.cs') (Join-Path $taskRoot 'src\Host\LoginAttemptGate.cs') (Join-Path $taskRoot 'src\Host\SupervisorPolicy.cs') (Join-Path $taskRoot 'src\Host\LogonSessionIdentity.cs') (Join-Path $taskRoot 'src\Host\DesktopLaunchCoordinator.cs') (Join-Path $taskRoot 'src\Shared\WindowsCommandLine.cs') (Join-Path $taskRoot 'src\Shared\InputDesktopState.cs') (Join-Path $taskRoot 'src\Shared\StartupLimits.cs') (Join-Path $taskRoot 'src\Shared\LoginTaskSupport.cs')
 if ($LASTEXITCODE -ne 0) { throw '宿主编译失败。' }
 Copy-Item -LiteralPath (Join-Path $taskRoot 'src\Host\WinBootVideo.Host.exe.config') -Destination $output
-foreach ($document in @('README.md', 'LICENSE', 'QA.md')) {
+foreach ($document in @('README.md', 'LICENSE', 'QA.md', 'THIRD-PARTY-NOTICES.md')) {
     $source = Join-Path $taskRoot $document
     if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $output }
 }
 $demo = Join-Path $taskRoot 'assets\demo-login.mp4'
+$licenses = Join-Path $output 'licenses'
+New-Item -ItemType Directory -Path $licenses -Force | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $taskRoot 'assets\licenses') -File | Copy-Item -Destination $licenses
 if (Test-Path -LiteralPath $demo) { Copy-Item -LiteralPath $demo -Destination (Join-Path $output 'demo-login.mp4') }
 $researchSource = Join-Path $taskRoot 'research'
 $researchTarget = Join-Path $output 'research'

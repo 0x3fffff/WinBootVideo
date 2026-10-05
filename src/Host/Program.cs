@@ -50,7 +50,7 @@ namespace WinBootVideo.Host
             try
             {
                 dataDirectory = Path.GetFullPath(Argument(args, "--data-dir", dataDirectory));
-                Log("host-entry source=" + entrySource + " pid=" + Process.GetCurrentProcess().Id + " version=0.1.6");
+                Log("host-entry source=" + entrySource + " pid=" + Process.GetCurrentProcess().Id + " version=0.2.0");
                 if (restoring) { RestoreShell(); return 0; }
                 if (startupFallback && !preview)
                 {
@@ -136,7 +136,7 @@ namespace WinBootVideo.Host
                 {
                     if (process == null) throw new IOException("Cannot start player.");
                     Log("player-start: " + process.Id);
-                    Log("login-flow mode=" + (preview ? "preview" : "login") + " source=" + entrySource + " version=0.1.6 strict-before-desktop=true");
+                    Log("login-flow mode=" + (preview ? "preview" : "login") + " source=" + entrySource + " version=0.2.0 strict-before-desktop=true");
                     supervisorRunning = true;
                     var clock = lifetime;
                     var policy = new SupervisorPolicy(startup * 1000L, total * 1000L);

@@ -2,6 +2,23 @@
 
 验证日期：2026-10-05。环境：Windows 11 Home China / 25H2（26200.9168），x64 .NET 8 SDK 8.0.422 / WindowsDesktop 8.0.28。自动播放验证全部使用 `--preview`，没有注销、重启或切换用户输入桌面。真实安装和登录配置的变更另行记录，不属于模拟注册表验证。
 
+## 0.2.0 开机 Logo（2026-10-05 至 2026-10-06）
+
+内置 HackBGRT 2.6.0 官方 ZIP，GitHub digest 与本地 SHA-256 一致，保留 MIT、GNU-EFI / Intel 和 shim 版权。新 GUI 包含选图 / 转换、导出、管理员只读检查、固件指引、恢复确认及独立安装 / 恢复入口。普通 GUI、播放器保持 asInvoker，专用辅助进程通过 UAC 工作。
+
+完整 `./verify.ps1 -FFmpegDirectory "E:\项目\ffmpeg\bin" -OutputDirectory artifacts\WinBootVideo-0.2.0` 通过原有 **182 项主检查**、独立可见性 **6 项**、单屏全屏 GUI **8 项**及部分恢复 GUI **3 项**。只有一块屏幕，双屏回归明确 SKIP。Logo 当时通过 303 项；最后增加 EFI 空间未知 / 不足停止条件，独立 `--boot-logo-only` 对最终包通过 **305 项检查**。日志为忽略的 `artifacts/verification-0.2.0.txt` 与 `artifacts/boot-logo-final-0.2.0.txt`。检查数包含不同截断长度，不代表真实机器兼容性数量。
+
+- 模拟固件采用生产解析与事务：计划阶段只读；Windows 默认不变，新项追加末尾，写入后读回；原 Windows Boot####、BCD、BootNext 不写入。未知 / 加密、外来槽位、原项变化、损坏计划、多 ESP、额外启动项、待执行 BootNext 均停止。
+- 故障注入覆盖初始备份落盘、文件复制 / 校验、二次备份、新项 / 顺序写入及最终记录保存。初始备份失败不改 EFI；复制 / 校验失败不改固件；注册后的失败撤销自己的项。撤销不完整明确 Failed 和人工恢复要求，不伪报成功。恢复可重试，保留后来添加的外来项和顺序。
+- 字节与像素覆盖 BMP3 字段、尺寸、行对齐、上下翻转、黑边、PNG 半透明黑底合成、截断数据拒绝；EFI UTF-16 节点边界、GPT GUID 匹配与 TOKEN_PRIVILEGES 的 16 字节 ABI / LUID 偏移 4。
+- 真实 WPF GUI 选图、导出和按钮事件：无图不能导出 / 安装；删除原图后副本有效；未知加密阻止安装；确认可撤销；Secure Boot 需要 shim 确认。安装 Click 使用注入模拟执行器，不调用 UAC。顶部 / 底部渲染核查确认文案和操作详情可读。
+- Framework 4.8 夹具只反射调用锁定官方 InstallFiles 到普通临时目录，未调用 Main、Run、ESP 探测或固件 API。实际六文件通过生产校验，模拟 Windows 文件字节保留。首次因合法 GDI biSizeImage=0 误拒绝，修复后通过；损坏 EFI 与外来文件仍拒绝。
+- 实际辅助 CLI 对不支持操作、普通权限 probe / install 返回失败报告，未知不误报安全，已有报告不覆盖。不调用 UAC，不创建 ProgramData Logo 记录，不写真实 EFI / NVRAM / BCD。
+
+只读识别当前电脑为 COLORFUL P15 23、单系统 ESP；普通权限不能确认安全启动和加密，因此未据此放行实际安装。没有改 Secure Boot、TPM、BitLocker、主板启动顺序或重启；没有虚拟 / 真实 UEFI 首次启动验收。模拟检查与临时复制不能证明固件、shim、更新和断电条件安全。初版保留 Windows 默认，要求恢复介质和单次试启动，不承诺零启动风险。
+
+0.2.0 已更新既有个人应用目录，6 个运行文件的 SHA-256 与最终发布包一致。原版本完整保留于 `app-backup-0.1.6.0-20261006-000939`；settings、Shell 原始备份、任务原始备份与登录标记均核对哈希不变，HKCU Shell 字符串不变。ProgramData Logo 状态目录不存在，未执行 Logo 安装 / 提权检查 / 实际启用。升级后未自动重启或打开非预览播放器。
+
 ## 0.1.6 视频先于桌面
 
 用户要求取消桌面出现后再覆盖播放。最近一次真实登录的证据是 Shell 主入口于 21:26:07 启动，21:26:09 确认黑色遮罩并请求 Explorer，直到 21:26:19 才开始媒体加载 / 播放；备用任务同次登录仅记录 duplicate-mutex，没有接管。旧生产 SupervisorPolicy 在 Ready=true、Playback=false、输入桌面尚不可见时已返回 StartDesktop=true，`--strict-desktop-only` 回归在修复前确实失败。日志没有证明具体原生 Z 顺序变化，但明确证明桌面启动与视频呈现之间缺少交接约束。

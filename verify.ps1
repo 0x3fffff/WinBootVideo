@@ -14,6 +14,9 @@ if ($LASTEXITCODE -ne 0) { throw '验证夹具编译失败。' }
 $deferredFixture = Join-Path $PSScriptRoot 'artifacts\DeferredReadyPlayer.exe'
 & $compiler /nologo /target:winexe /platform:x64 "/out:$deferredFixture" (Join-Path $PSScriptRoot 'tests\fixtures\DeferredReadyPlayer.cs')
 if ($LASTEXITCODE -ne 0) { throw '冷启动延迟就绪夹具编译失败。' }
+$logoFixture = Join-Path $PSScriptRoot 'artifacts\OfficialLogoFiles.exe'
+& $compiler /nologo /target:exe /platform:x64 "/out:$logoFixture" (Join-Path $PSScriptRoot 'tests\fixtures\OfficialLogoFiles.cs')
+if ($LASTEXITCODE -ne 0) { throw '官方 Logo 隔离文件复制夹具编译失败。' }
 $env:DOTNET_CLI_HOME = Join-Path $PSScriptRoot '.cli'
 $env:MSBuildEnableWorkloadResolver = 'false'
 $sdk = Join-Path $env:ProgramFiles 'dotnet\dotnet.exe'
@@ -27,3 +30,5 @@ if ($LASTEXITCODE -ne 0) { throw '集成验证失败。' }
 if ($LASTEXITCODE -ne 0) { throw '真实 GUI 全屏预览验证失败。' }
 & $sdk run --project (Join-Path $PSScriptRoot 'tests\WinBootVideo.Checks.csproj') -c Release --no-restore --no-build -- --gui-recovery-only
 if ($LASTEXITCODE -ne 0) { throw '备用任务不可用时的 GUI 恢复验证失败。' }
+& $sdk run --project (Join-Path $PSScriptRoot 'tests\WinBootVideo.Checks.csproj') -c Release --no-restore --no-build -- --boot-logo-only $logoFixture $bundle
+if ($LASTEXITCODE -ne 0) { throw 'Logo 图片、模拟固件事务、GUI 与官方隔离文件复制验证失败。' }
