@@ -21,3 +21,7 @@ $sdk = Join-Path $env:ProgramFiles 'dotnet\dotnet.exe'
 if ($LASTEXITCODE -ne 0) { throw '验证项目还原失败。' }
 & $sdk run --project (Join-Path $PSScriptRoot 'tests\WinBootVideo.Checks.csproj') -c Release --no-restore -- $bundle $FFmpegDirectory $fixture $deferredFixture
 if ($LASTEXITCODE -ne 0) { throw '集成验证失败。' }
+# WPF allows one Application per process; run the real multi-screen GUI flow
+# separately from the windowed GUI checks above.
+& $sdk run --project (Join-Path $PSScriptRoot 'tests\WinBootVideo.Checks.csproj') -c Release --no-restore --no-build -- --gui-fullscreen-only $bundle
+if ($LASTEXITCODE -ne 0) { throw '真实双屏 GUI 全屏预览验证失败。' }

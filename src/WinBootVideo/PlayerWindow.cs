@@ -136,7 +136,9 @@ public sealed class PlayerWindow : Window
         {
             foreach (var screen in Forms.Screen.AllScreens.Where(s => s.DeviceName != selected.DeviceName))
             {
-                var mask = new Window { Background = Brushes.Black, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false, Topmost = true, ShowActivated = false };
+                // ContentRendered is not raised for an empty Window, even with a
+                // Background. Give every mask actual opaque content before Show.
+                var mask = new Window { Background = Brushes.Black, Content = new Border { Background = Brushes.Black }, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false, Topmost = true, ShowActivated = false };
                 var ready = new TaskCompletionSource();
                 mask.ContentRendered += (_, _) => { LogTiming("secondary-content-rendered"); ready.TrySetResult(); };
                 rendered.Add(ready.Task);

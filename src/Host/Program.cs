@@ -116,7 +116,7 @@ namespace WinBootVideo.Host
                 {
                     if (process == null) throw new IOException("Cannot start player.");
                     Log("player-start: " + process.Id);
-                    Log("login-flow mode=" + (preview ? "preview" : "login") + " version=0.1.3");
+                    Log("login-flow mode=" + (preview ? "preview" : "login") + " version=0.1.4");
                     supervisorRunning = true;
                     var clock = lifetime;
                     var policy = new SupervisorPolicy(startup * 1000L, total * 1000L);

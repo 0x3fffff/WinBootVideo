@@ -6,12 +6,12 @@ using WinBootVideo.Core;
 
 internal static class GuiFlowChecks
 {
-    public static async Task Run(string bundle, Action<bool, string> check, string? videoPath = null)
+    public static async Task Run(string bundle, Action<bool, string> check, string? videoPath = null, bool fullscreen = false)
     {
         string work = Path.Combine(Path.GetTempPath(), "WinBootVideo-gui-" + Guid.NewGuid().ToString("N"));
         var paths = new AppPaths(work);
         var store = new SettingsStore(paths);
-        var draft = new Settings { VideoPath = Path.GetFullPath(videoPath ?? Path.Combine(bundle, "demo-login.mp4")), Volume = videoPath == null ? .71 : 0, FadeOutMilliseconds = 100, MaxDurationSeconds = 15, StartupTimeoutSeconds = 5, CoverOtherScreens = false };
+        var draft = new Settings { VideoPath = Path.GetFullPath(videoPath ?? Path.Combine(bundle, "demo-login.mp4")), Volume = fullscreen || videoPath != null ? 0 : .71, FadeOutMilliseconds = 100, MaxDurationSeconds = 15, StartupTimeoutSeconds = 5, CoverOtherScreens = fullscreen };
         store.Write(draft);
         var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
@@ -22,7 +22,7 @@ internal static class GuiFlowChecks
                 app = new WinBootVideo.App(); app.InitializeComponent();
                 app.ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
                 var registry = new FakeRegistry();
-                var window = new WinBootVideo.MainWindow(paths, registry, Path.Combine(bundle, "WinBootVideo.Host.exe"), previewWindowed: true)
+                var window = new WinBootVideo.MainWindow(paths, registry, Path.Combine(bundle, "WinBootVideo.Host.exe"), previewWindowed: !fullscreen)
                 {
                     ShowInTaskbar = false, ShowActivated = false,
                     WindowStartupLocation = System.Windows.WindowStartupLocation.Manual, Left = -10000, Top = -10000
@@ -47,6 +47,21 @@ internal static class GuiFlowChecks
                         check(saved.Volume == draft.Volume && saved.FadeOutMilliseconds == draft.FadeOutMilliseconds && saved.CoverOtherScreens == draft.CoverOtherScreens && saved.MaxDurationSeconds == draft.MaxDurationSeconds,
                             "GUI 导入视频与确认预览后保留用户设置");
                         check(!registry.Current.Exists, "GUI 预览不写入登录 Shell");
+                        if (fullscreen)
+                        {
+                            // The successful production GUI flow has already checked the
+                            // actual playback receipt and matching video SHA. Ready is only
+                            // signalled after the native screen coverage checks pass.
+                            string timing = File.ReadAllText(Path.Combine(paths.LogDirectory, "playback-timing.log"));
+                            int secondary = timing.IndexOf("secondary-content-rendered", StringComparison.Ordinal);
+                            int ready = timing.IndexOf("overlay-rendered mode=preview", StringComparison.Ordinal);
+                            int playback = timing.IndexOf("playback-start input-confirmed=true position-ms=0", StringComparison.Ordinal);
+                            int opened = timing.IndexOf("media-opened", StringComparison.Ordinal);
+                            check(secondary >= 0, "GUI 真正全屏预览经过真实副屏遮罩 ContentRendered，未绕过多屏路径");
+                            check(ready > secondary, "GUI 副屏遮罩渲染及 HWND 物理覆盖检查成功后完成 Ready 握手");
+                            check(playback > ready && opened > playback, "GUI 真实 Host 与 WPF 播放器完成可见桌面确认、从零开始及视频解码");
+                            check(timing.Contains("playback-exit code=0", StringComparison.Ordinal), "GUI 真正全屏视频播放完整结束，未靠 Esc 跳过通过验证");
+                        }
                         completed.TrySetResult();
                     }
                     catch (Exception ex) { completed.TrySetException(ex); }

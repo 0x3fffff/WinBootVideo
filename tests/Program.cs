@@ -16,6 +16,12 @@ string work = Path.Combine(Path.GetTempPath(), "WinBootVideo-checks-" + Guid.New
 Directory.CreateDirectory(work);
 try
 {
+    if (args.Length == 2 && args[0] == "--multiscreen-only")
+    {
+        bool executed = await MultiscreenChecks.Run(args[1], Check);
+        if (executed) Console.WriteLine($"{checks} actual multi-monitor checks passed. Private non-input desktop; no Shell or registry writes.");
+        return;
+    }
     if (args.Length == 1 && args[0] == "--desktop-launch-only")
     {
         DesktopLaunchChecks.Run(Check);
@@ -44,6 +50,17 @@ try
     {
         await GuiFlowChecks.Run(args[1], Check, args.Length == 3 ? args[2] : null);
         Console.WriteLine($"{checks} GUI checks passed. No real registry writes.");
+        return;
+    }
+    if ((args.Length == 2 || args.Length == 3) && args[0] == "--gui-fullscreen-only")
+    {
+        if (System.Windows.Forms.Screen.AllScreens.Length < 2)
+        {
+            Console.WriteLine("SKIP: full-screen GUI multi-monitor regression requires at least two real screens.");
+            return;
+        }
+        await GuiFlowChecks.Run(args[1], Check, args.Length == 3 ? args[2] : null, fullscreen: true);
+        Console.WriteLine($"{checks} actual full-screen GUI checks passed. No real registry writes.");
         return;
     }
     var selectedSettings = new Settings { VideoPath = @"D:\桌面\intro.mp4", VideoSha256 = new string('a', 64), VerifiedVideoSha256 = new string('b', 64), Volume = .71, FadeOutMilliseconds = 980, MaxDurationSeconds = 52, StartupTimeoutSeconds = 7, CoverOtherScreens = false, ScreenDevice = "DISPLAY2", FfmpegPath = @"E:\tools\ffmpeg.exe", FfprobePath = @"E:\tools\ffprobe.exe" };
@@ -133,6 +150,7 @@ try
     if (args.Length == 3 || args.Length == 4)
     {
         await IntegrationChecks.Run(args[0], args[1], args[2], Check);
+        await MultiscreenChecks.Run(args[0], Check);
         await HiddenDesktopChecks.Run(args[0], Check);
         await GuiFlowChecks.Run(args[0], Check);
         if (args.Length == 4) await ColdStartChecks.Run(args[0], args[3], Check);

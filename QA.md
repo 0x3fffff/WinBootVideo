@@ -4,7 +4,7 @@
 
 ## 已通过
 
-`./verify.ps1 -FFmpegDirectory "E:\项目\ffmpeg\bin" -OutputDirectory artifacts\WinBootVideo-0.1.3` 完成 **112 项主流程检查**，其中等待后播放的独立子进程另执行 **6 项检查**。另 `build.ps1 -Test` 的 73 项快速逻辑检查通过。覆盖：
+0.1.4 使用 `./verify.ps1 -FFmpegDirectory "E:\项目\ffmpeg\bin" -OutputDirectory artifacts\WinBootVideo-0.1.4` 完成 **118 项主流程检查**，其中等待后播放的独立子进程另执行 **6 项检查**。另 `build.ps1 -Test` 的 73 项快速逻辑检查通过；使用用户已保存的 7 秒视频执行真实双屏 GUI 全屏预览，独立 **8 项检查**通过。覆盖：
 
 - 初始化未就绪、播放超时与提前失败的桌面放行决策；纯状态机验证。
 - 遮罩渲染后仍未成为输入桌面时保留动画；输入桌面激活后的握手期限、独立 15 分钟等待期限与播放中离开输入桌面的清理；纯状态机验证。
@@ -22,6 +22,20 @@
 - 实际 WPF Player / MediaElement 的可见性探针先保持 false 6 秒（超过所设 2 秒初始化与 5 秒播放预算），确认 Source=null、Position=0；随后放行，首次解码从开头开始，完整播放 2 秒视频并生成成功收据。
 - 实际已发布 Host 在私有非输入桌面启动延迟 10 秒才发送 Ready 的独立进程：第 8 秒 Host 与子进程都仍存活，未消耗所设 2 秒初始化或 5 秒播放上限，随后正常结束。旧版相同路径于 2 秒结束并杀掉子进程，回归先红后绿。
 - 生产桌面请求协调模块模拟 GetShellWindow 尚未建立、首次请求后 finally 再调用、启动代理正常退出、12 次并发请求，以及明确启动失败的冷却和最多 2 次重试；成功请求均只执行一次。旧逻辑在首次请求后 finally 再调用时启动了两次，回归先红后绿。
+- 实际发布版播放器不带 `--windowed`，开启副屏遮罩，在两个真实屏幕的私有非输入桌面上建立主窗口与副屏窗口，收到 Ready 且不开始播放；旧版 5 秒无 Ready，修复后约 0.5 秒就绪。
+- 实际 GUI 保存按钮不带窗口化测试选项，使用用户 7 秒视频、静音、开启副屏遮罩。生产 Host 与播放器完成副屏渲染、物理覆盖、输入桌面确认、从零播放、解码与正常结束；预览成功标记和启用按钮均有效。独立配置、模拟注册表，不修改用户设置。
+
+## 0.1.4 双屏全屏预览一直黑屏
+
+用户两次真实预览分别在约 9.6 秒、24.5 秒按 Esc 退出。日志显示主窗口约 0.56 秒已 ContentRendered，但没有副屏渲染、Ready 或 playback-start，退出时视频位置始终为 0。此阶段还未加载视频，不能归因于解码慢或图片密码等待。
+
+旧版副屏 Window 只有 Background，没有 Content，却等待它的 ContentRendered。Microsoft [官方文档](https://learn.microsoft.com/en-us/dotnet/api/system.windows.window.contentrendered?view=windowsdesktop-10.0) 明确说明无内容窗口不会触发该事件；因此所有遮罩就绪等待无法完成。最小修复为副屏添加黑色 Border 内容，保留原有渲染完成等待、HWND 屏幕边界核验、可见桌面门控、Esc 及淡出行为。
+
+真实双屏回归先在已发布 0.1.3 上失败：两个窗口已显示、主渲染完成，5.04 秒仍未 Ready；0.1.4 同路径副屏约 490 毫秒渲染、492 毫秒 Ready，6 项检查通过。私有桌面不切换到用户输入桌面，测试子进程均清理。随后用户原视频副本经真实 GUI 全屏预览完整播放，8 项检查通过。以往窗口化 GUI / CLI 检查未建立副屏遮罩，覆盖不足；现在 `verify.ps1` 除私有桌面多屏回归外，会用另一个测试进程运行实际双屏 GUI 全屏播放，避免同一进程创建多个 WPF Application。少于两块屏幕时明确 SKIP。
+
+此次读到的真实 HKCU Shell 值已不存在，视频验证标记为空：用户保存新预览时按设计恢复了普通登录，取消的预览未解锁启用。自动测试不会替用户写入成功标记或重新启用；须在新版中成功预览后点击“启用登录动画”。真实关机再开机仍需复测。
+
+回归通过后已更新现有安装目录中的 6 个应用文件，并逐个核对 SHA-256 与 0.1.4 发布包一致；旧程序保留于 `app-backup-0.1.3-20261005-163229`。settings.json、shell-backup.json 的 SHA-256 及 HKCU Shell 均保持原样，当前仍为普通登录。本次未注销或重启。
 
 ## 0.1.3 关机后再开机缺失动画与 Explorer 重复请求
 
@@ -50,7 +64,8 @@
 单独运行 GUI 回归（可在最后追加自选视频路径，测试预览静音、使用独立数据与模拟注册表）：
 
 ```powershell
-& 'C:\Program Files\dotnet\dotnet.exe' run --project tests\WinBootVideo.Checks.csproj -c Release --no-restore -- --gui-only 'E:\Project\WinBootVideo\artifacts\WinBootVideo-0.1.3'
+& 'C:\Program Files\dotnet\dotnet.exe' run --project tests\WinBootVideo.Checks.csproj -c Release --no-restore -- --gui-only 'E:\Project\WinBootVideo\artifacts\WinBootVideo-0.1.4'
+& 'C:\Program Files\dotnet\dotnet.exe' run --project tests\WinBootVideo.Checks.csproj -c Release --no-restore -- --gui-fullscreen-only 'E:\Project\WinBootVideo\artifacts\WinBootVideo-0.1.4'
 ```
 
 0.1.1 时另完成 5 秒示例的实际全屏预览：退出码 0，约 6.5 秒结束（包括进程启动与淡出）；视频已加载、播放进度前进，窗口边界与选择的屏幕边界一致（`screenCoverageVerified: true`）。当时 GUI 已渲染并视觉检查，见 `artifacts/gui-preview.png`；当时只读检查未发现当前用户 Winlogon 键，开发流程没有创建 Shell 覆盖值。用户随后自行通过 GUI 启用了登录动画。
@@ -62,7 +77,7 @@
 ## 尚需真实使用验证
 
 - 从 Winlogon 到 Explorer 的真实登录时序，以及欢迎页是否短暂残留、桌面 / 壁纸插件是否有可见闪烁。
-- 真实 Shell 注册 / 备份恢复与注销登录；开发测试使用模拟注册表，用户已自行启用，0.1.2 曾一次完整播放但后续冷启动仍失败；0.1.3 的真实关机再开机待复测。
+- 真实 Shell 注册 / 备份恢复与注销登录；开发测试使用模拟注册表，0.1.2 曾一次完整播放但后续冷启动仍失败；0.1.4 成功预览并重新启用后的真实关机再开机待复测。
 - 锁屏解锁与注销重登行为；基于 Shell 生命周期和会话去重实现，尚未执行实际会话切换。
 - 混合 DPI 多屏、屏幕热插拔、远程桌面、多用户并发登录与第三方桌面组件。
 - 用户自己的视频画面、音频、HDR 色调映射质量；合成素材只验证处理管线能够运行。
