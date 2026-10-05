@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Security.Principal;
+using System.Threading;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -10,7 +12,7 @@ namespace WinBootVideo;
 
 public partial class App : Application
 {
-    protected override void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -19,11 +21,27 @@ public partial class App : Application
         {
             Log(paths, exception.Exception);
             exception.Handled = true;
-            if (!Arguments.Has(e.Args, "--player")) MessageBox.Show(exception.Exception.Message, "WinBootVideo", MessageBoxButton.OK, MessageBoxImage.Error);
+            if (!Arguments.Has(e.Args, "--player") && !Arguments.Has(e.Args, "--repair-startup")) MessageBox.Show(exception.Exception.Message, "WinBootVideo", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(30);
         };
         try
         {
+            if (Arguments.Has(e.Args, "--repair-startup"))
+            {
+                var saved = new SettingsStore(paths).Load();
+                saved.Validate();
+                if (saved.VideoSha256.Length != 64 || saved.VerifiedVideoSha256 != saved.VideoSha256 ||
+                    await SettingsStore.HashAsync(saved.VideoPath, CancellationToken.None) != saved.VideoSha256)
+                    throw new InvalidDataException("修复启动入口前须已有成功预览且未变化的视频。");
+                string sid = WindowsIdentity.GetCurrent().User?.Value ?? throw new InvalidOperationException("无法识别当前用户。");
+                var startup = new LoginStartupController(paths);
+                if (!startup.HasOwnedStartup(sid)) throw new InvalidOperationException("此命令仅修复已有登录动画；首次启用请使用 GUI。");
+                startup.Enable(sid);
+                string? report = Arguments.Value(e.Args, "--startup-report");
+                if (report != null) AtomicJson.Write(report, new { version = "0.1.5", enabled = startup.IsEnabled(sid) });
+                Shutdown(startup.IsEnabled(sid) ? 0 : 30);
+                return;
+            }
             if (Arguments.Has(e.Args, "--player"))
             {
                 LogPhase(paths, "app-started");
@@ -60,7 +78,7 @@ public partial class App : Application
         catch (Exception ex)
         {
             Log(paths, ex);
-            if (!Arguments.Has(e.Args, "--player")) MessageBox.Show(ex.Message, "WinBootVideo", MessageBoxButton.OK, MessageBoxImage.Error);
+            if (!Arguments.Has(e.Args, "--player") && !Arguments.Has(e.Args, "--repair-startup")) MessageBox.Show(ex.Message, "WinBootVideo", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(30);
         }
     }

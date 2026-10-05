@@ -18,7 +18,7 @@ if ($LASTEXITCODE -ne 0) { throw '离线还原失败。' }
 & $sdk publish (Join-Path $taskRoot 'src\WinBootVideo\WinBootVideo.csproj') -c Release -o $output --self-contained false --no-restore
 if ($LASTEXITCODE -ne 0) { throw 'GUI 编译失败。' }
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-& $compiler /nologo /target:winexe /platform:x64 /optimize+ "/out:$output\WinBootVideo.Host.exe" /r:System.Web.Extensions.dll (Join-Path $taskRoot 'src\Host\Program.cs') (Join-Path $taskRoot 'src\Host\SupervisorPolicy.cs') (Join-Path $taskRoot 'src\Host\LogonSessionIdentity.cs') (Join-Path $taskRoot 'src\Host\DesktopLaunchCoordinator.cs') (Join-Path $taskRoot 'src\Shared\WindowsCommandLine.cs') (Join-Path $taskRoot 'src\Shared\InputDesktopState.cs') (Join-Path $taskRoot 'src\Shared\StartupLimits.cs')
+& $compiler /nologo /target:winexe /platform:x64 /optimize+ "/out:$output\WinBootVideo.Host.exe" /r:System.Web.Extensions.dll /r:System.Xml.dll (Join-Path $taskRoot 'src\Host\Program.cs') (Join-Path $taskRoot 'src\Host\LoginAttemptGate.cs') (Join-Path $taskRoot 'src\Host\SupervisorPolicy.cs') (Join-Path $taskRoot 'src\Host\LogonSessionIdentity.cs') (Join-Path $taskRoot 'src\Host\DesktopLaunchCoordinator.cs') (Join-Path $taskRoot 'src\Shared\WindowsCommandLine.cs') (Join-Path $taskRoot 'src\Shared\InputDesktopState.cs') (Join-Path $taskRoot 'src\Shared\StartupLimits.cs') (Join-Path $taskRoot 'src\Shared\LoginTaskSupport.cs')
 if ($LASTEXITCODE -ne 0) { throw '宿主编译失败。' }
 Copy-Item -LiteralPath (Join-Path $taskRoot 'src\Host\WinBootVideo.Host.exe.config') -Destination $output
 foreach ($document in @('README.md', 'LICENSE', 'QA.md')) {

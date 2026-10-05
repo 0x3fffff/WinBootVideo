@@ -5,6 +5,7 @@
     <ProjectReference Include="../src/WinBootVideo/WinBootVideo.csproj"/>
     <Compile Include="../src/Host/SupervisorPolicy.cs" Link="SupervisorPolicy.cs"/>
     <Compile Include="../src/Host/LogonSessionIdentity.cs" Link="LogonSessionIdentity.cs"/>
+    <Compile Include="../src/Host/LoginAttemptGate.cs" Link="LoginAttemptGate.cs"/>
     <Compile Include="../src/Host/DesktopLaunchCoordinator.cs" Link="DesktopLaunchCoordinator.cs"/>
   </ItemGroup>
 </Project>

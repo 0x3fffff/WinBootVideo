@@ -6,7 +6,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>0.1.4</Version>
+    <Version>0.1.5</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
@@ -14,4 +14,5 @@
   <ItemGroup><Compile Include="../Shared/WindowsCommandLine.cs" Link="Core/WindowsCommandLine.cs" /></ItemGroup>
   <ItemGroup><Compile Include="../Shared/InputDesktopState.cs" Link="Core/InputDesktopState.cs" /></ItemGroup>
   <ItemGroup><Compile Include="../Shared/StartupLimits.cs" Link="Core/StartupLimits.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../Shared/LoginTaskSupport.cs" Link="Core/LoginTaskSupport.cs" /></ItemGroup>
 </Project>

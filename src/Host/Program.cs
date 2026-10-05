@@ -15,6 +15,8 @@ namespace WinBootVideo.Host
     {
         private static string dataDirectory;
         private static bool preview;
+        private static bool startupFallback;
+        private static string entrySource;
         private static bool ownsLoginFlow = true;
         private static readonly Stopwatch lifetime = Stopwatch.StartNew();
         private static volatile bool supervisorRunning;
@@ -41,8 +43,40 @@ namespace WinBootVideo.Host
         private static int Main(string[] args)
         {
             preview = Array.IndexOf(args, "--preview") >= 0;
+            startupFallback = Array.IndexOf(args, "--startup-fallback") >= 0;
+            entrySource = startupFallback ? (preview ? "task-preview" : "task") : (preview ? "preview" : "shell");
             dataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinBootVideo");
-            // Covers configuration / session lookup / Process.Start before the supervision loop exists.
+            bool restoring = Array.IndexOf(args, "--restore") >= 0;
+            if (!restoring && (!startupFallback || preview)) StartInitializerGuard();
+            try
+            {
+                dataDirectory = Path.GetFullPath(Argument(args, "--data-dir", dataDirectory));
+                Log("host-entry source=" + entrySource + " pid=" + Process.GetCurrentProcess().Id + " version=0.1.5");
+                if (restoring) { RestoreShell(); return 0; }
+                if (startupFallback && !preview)
+                {
+                    FallbackStartupResult result = WaitForExistingDesktop();
+                    if (result != FallbackStartupResult.Ready) return result == FallbackStartupResult.Disabled ? 0 : 31;
+                    // Waiting for the primary shell must not consume playback startup time.
+                    lifetime.Restart();
+                    StartInitializerGuard();
+                }
+                if (!preview)
+                {
+                    string session = LogonSessionIdentity.Read();
+                    return LoginAttemptGate.Run(session, Path.Combine(dataDirectory, "last-logon.txt"),
+                        delegate { return Run(args); },
+                        delegate { if (!startupFallback) EnsureDesktop(); ownsLoginFlow = false; },
+                        delegate(string message) { Log(message + " source=" + entrySource); if (message == "duplicate-mutex") ownsLoginFlow = false; });
+                }
+                return Run(args);
+            }
+            catch (Exception ex) { Log("host-failure: " + ex); return 30; }
+            finally { flowFinished = true; if (!preview && !startupFallback && ownsLoginFlow) EnsureDesktop(); }
+        }
+        private static void StartInitializerGuard()
+        {
+            // Covers configuration / session lookup / Process.Start before supervision exists.
             var initializerGuard = new Thread(delegate()
             {
                 while (!flowFinished && !supervisorRunning)
@@ -50,8 +84,8 @@ namespace WinBootVideo.Host
                     if (lifetime.ElapsedMilliseconds >= startupLimitMilliseconds)
                     {
                         if (flowFinished || supervisorRunning) return;
-                        Log("host-initialization-timeout");
-                        if (!preview && ownsLoginFlow) EnsureDesktop();
+                        Log("host-initialization-timeout source=" + entrySource);
+                        if (!preview && !startupFallback && ownsLoginFlow) EnsureDesktop();
                         Environment.Exit(31);
                     }
                     Thread.Sleep(100);
@@ -59,32 +93,24 @@ namespace WinBootVideo.Host
             });
             initializerGuard.IsBackground = true;
             initializerGuard.Start();
-            try
+        }
+        private static bool IsOwnShellEnabled()
+        {
+            string host = Path.Combine(dataDirectory, "app", "WinBootVideo.Host.exe");
+            string command = WindowsCommandLine.Quote(host) + " --data-dir " + WindowsCommandLine.Quote(dataDirectory);
+            using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows NT\CurrentVersion\Winlogon"))
             {
-                dataDirectory = Path.GetFullPath(Argument(args, "--data-dir", dataDirectory));
-                if (Array.IndexOf(args, "--restore") >= 0) { RestoreShell(); return 0; }
-                if (!preview)
-                {
-                    string session = LogonSessionIdentity.Read();
-                    bool created;
-                    using (var mutex = new Mutex(true, @"Local\WinBootVideo.Host." + session, out created))
-                    {
-                        if (!created) { ownsLoginFlow = false; return 0; }
-                        try
-                        {
-                            string stamp = Path.Combine(dataDirectory, "last-logon.txt");
-                            if (File.Exists(stamp) && File.ReadAllText(stamp) == session) { EnsureDesktop(); return 0; }
-                            Directory.CreateDirectory(dataDirectory);
-                            File.WriteAllText(stamp, session);
-                            return Run(args);
-                        }
-                        finally { mutex.ReleaseMutex(); }
-                    }
-                }
-                return Run(args);
+                string current = key == null ? "" : Convert.ToString(key.GetValue("Shell", "", RegistryValueOptions.DoNotExpandEnvironmentNames));
+                return string.Equals(current, command, StringComparison.OrdinalIgnoreCase);
             }
-            catch (Exception ex) { Log("host-failure: " + ex); return 30; }
-            finally { flowFinished = true; if (!preview && ownsLoginFlow) EnsureDesktop(); }
+        }
+        private static FallbackStartupResult WaitForExistingDesktop()
+        {
+            var waiting = Stopwatch.StartNew();
+            return FallbackStartupGate.WaitUntilDesktop(IsOwnShellEnabled,
+                delegate { return GetShellWindow() != IntPtr.Zero; },
+                delegate { return waiting.ElapsedMilliseconds; },
+                delegate { Thread.Sleep(100); }, Log);
         }
         private static int Run(string[] args)
         {
@@ -116,7 +142,7 @@ namespace WinBootVideo.Host
                 {
                     if (process == null) throw new IOException("Cannot start player.");
                     Log("player-start: " + process.Id);
-                    Log("login-flow mode=" + (preview ? "preview" : "login") + " version=0.1.4");
+                    Log("login-flow mode=" + (preview ? "preview" : "login") + " source=" + entrySource + " version=0.1.5");
                     supervisorRunning = true;
                     var clock = lifetime;
                     var policy = new SupervisorPolicy(startup * 1000L, total * 1000L);
@@ -138,8 +164,8 @@ namespace WinBootVideo.Host
                         bool rendered = ready.WaitOne(0);
                         if (rendered && !overlaySeen) { overlaySeen = true; Log("overlay-confirmed elapsed-ms=" + clock.ElapsedMilliseconds); }
                         var action = policy.Tick(clock.ElapsedMilliseconds, rendered, started, desktop.CanPresent, process.HasExited);
-                        if (action.StartDesktop && !preview) { EnsureDesktop(); desktopStarted = true; lastDesktopAttempt = clock.ElapsedMilliseconds; }
-                        if (desktopStarted && !preview && GetShellWindow() == IntPtr.Zero && clock.ElapsedMilliseconds - lastDesktopAttempt >= 3000)
+                        if (action.StartDesktop && !preview && !startupFallback) { EnsureDesktop(); desktopStarted = true; lastDesktopAttempt = clock.ElapsedMilliseconds; }
+                        if (desktopStarted && !preview && !startupFallback && GetShellWindow() == IntPtr.Zero && clock.ElapsedMilliseconds - lastDesktopAttempt >= 3000)
                         { EnsureDesktop(); lastDesktopAttempt = clock.ElapsedMilliseconds; }
                         if (action.KillPlayer)
                         {
@@ -166,6 +192,7 @@ namespace WinBootVideo.Host
         }
         private static void EnsureDesktop()
         {
+            if (preview || startupFallback || !ownsLoginFlow) return;
             try
             {
                 desktopLaunch.Ensure();
@@ -174,25 +201,70 @@ namespace WinBootVideo.Host
         }
         private static void RestoreShell()
         {
+            Exception shellFailure = null;
+            Exception taskFailure = null;
+            bool shellRestored = false;
+            bool taskRestored = false;
+            try { shellRestored = RestoreOwnShell(); }
+            catch (Exception ex) { shellFailure = ex; Log("shell-recovery-failure: " + ex.Message); }
+            try { taskRestored = RestoreOwnTask(); }
+            catch (Exception ex) { taskFailure = ex; Log("task-recovery-failure: " + ex.Message); }
+            if (shellFailure != null || taskFailure != null)
+                throw new InvalidOperationException("Startup recovery incomplete; shell-restored=" + shellRestored + "; task-restored=" + taskRestored, shellFailure ?? taskFailure);
+            Log("Startup recovery complete; shell-restored=" + shellRestored + "; task-restored=" + taskRestored);
+        }
+        private static bool RestoreOwnShell()
+        {
+            if (!IsOwnShellEnabled()) { Log("shell-disabled-or-foreign-preserved"); return false; }
             string path = Path.Combine(dataDirectory, "shell-backup.json");
             var backup = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(path));
             if (Convert.ToString(backup["userSid"]) != WindowsIdentity.GetCurrent().User.Value) throw new InvalidDataException("Backup user mismatch.");
             if (Convert.ToInt32(backup["schemaVersion"]) != 1) throw new InvalidDataException("Backup version.");
+            string expected = WindowsCommandLine.Quote(Path.Combine(dataDirectory, "app", "WinBootVideo.Host.exe")) + " --data-dir " + WindowsCommandLine.Quote(dataDirectory);
+            if (!string.Equals(Convert.ToString(backup["ownedCommand"]), expected, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Backup application mismatch.");
             var original = (Dictionary<string, object>)backup["original"];
+            int kind = Convert.ToInt32(original["kind"]);
+            if (Convert.ToBoolean(original["exists"]) && kind != 1 && kind != 2) throw new InvalidDataException("Unsupported backup kind.");
             const string keyPath = @"Software\Microsoft\Windows NT\CurrentVersion\Winlogon";
             using (var key = Registry.CurrentUser.CreateSubKey(keyPath))
             {
                 string current = Convert.ToString(key.GetValue("Shell", "", RegistryValueOptions.DoNotExpandEnvironmentNames));
-                if (!string.Equals(current, Convert.ToString(backup["ownedCommand"]), StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Shell has changed; recovery will not overwrite it.");
+                if (!string.Equals(current, expected, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Shell has changed; recovery will not overwrite it.");
                 if (Convert.ToBoolean(original["exists"]))
                 {
-                    int kind = Convert.ToInt32(original["kind"]);
-                    if (kind != 1 && kind != 2) throw new InvalidDataException("Unsupported backup kind.");
                     key.SetValue("Shell", Convert.ToString(original["value"]), (RegistryValueKind)kind);
                 }
                 else key.DeleteValue("Shell", false);
             }
             Log("Original current-user Shell restored.");
+            return true;
+        }
+        private static bool RestoreOwnTask()
+        {
+            string path = Path.Combine(dataDirectory, "login-task-backup.json");
+            if (!File.Exists(path)) return false;
+            var backup = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(path));
+            string sid = WindowsIdentity.GetCurrent().User.Value;
+            string taskName = LoginTaskDefinition.TaskName(sid);
+            string host = Path.Combine(dataDirectory, "app", "WinBootVideo.Host.exe");
+            if (Convert.ToInt32(backup["schemaVersion"]) != 1 || Convert.ToString(backup["userSid"]) != sid || Convert.ToString(backup["taskName"]) != taskName)
+                throw new InvalidDataException("Login task backup identity mismatch.");
+            if (!LoginTaskDefinition.IsOwned(Convert.ToString(backup["ownedXml"]), host, dataDirectory, sid))
+                throw new InvalidDataException("Login task backup application mismatch.");
+            var original = (Dictionary<string, object>)backup["original"];
+            bool originalExists = Convert.ToBoolean(original["exists"]);
+            string originalXml = Convert.ToString(original["xml"]);
+            if (originalExists && string.IsNullOrWhiteSpace(originalXml)) throw new InvalidDataException("Original login task backup is empty.");
+            if (originalExists && !LoginTaskDefinition.IsOwned(originalXml, host, dataDirectory, sid))
+                throw new InvalidDataException("Original login task backup application mismatch.");
+            var store = new ComLoginTaskStore();
+            var current = store.Read(taskName);
+            if (!current.Exists) { Log("task-already-absent"); return false; }
+            if (!LoginTaskDefinition.IsOwned(current.Xml, host, dataDirectory, sid)) { Log("task-foreign-preserved"); return false; }
+            if (originalExists) store.Write(taskName, originalXml);
+            else store.Delete(taskName);
+            Log("Original current-user login task restored.");
+            return true;
         }
         private static void Log(string message)
         {

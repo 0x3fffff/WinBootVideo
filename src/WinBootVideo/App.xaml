@@ -38,7 +38,7 @@
     <Style TargetType="ComboBox"><Setter Property="Padding" Value="7,5"/><Setter Property="MinHeight" Value="34"/></Style>
     <Style TargetType="CheckBox"><Setter Property="Margin" Value="0,7,0,7"/></Style>
     <Style x:Key="Card" TargetType="Border"><Setter Property="Background" Value="White"/><Setter Property="CornerRadius" Value="10"/><Setter Property="BorderBrush" Value="#E0E6ED"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="20"/></Style>
-    <Style x:Key="Small" TargetType="TextBlock"><Setter Property="Foreground" Value="{StaticResource Muted}"/><Setter Property="FontSize" Value="12"/><Setter Property="LineHeight" Value="20"/></Style>
+    <Style x:Key="Small" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}"><Setter Property="Foreground" Value="{StaticResource Muted}"/><Setter Property="FontSize" Value="12"/><Setter Property="LineHeight" Value="20"/></Style>
     <Style x:Key="Label" TargetType="TextBlock"><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Margin" Value="0,0,0,7"/></Style>
   </Application.Resources>
 </Application>

@@ -1,11 +1,70 @@
 using System.Diagnostics;
 using System.IO;
+using System.Security.Principal;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using WinBootVideo.Core;
 
 internal static class GuiFlowChecks
 {
+    public static async Task RunRecovery(Action<bool, string> check)
+    {
+        string work = Path.Combine(Path.GetTempPath(), "WinBootVideo-gui-recovery-" + Guid.NewGuid().ToString("N"));
+        var paths = new AppPaths(work);
+        var registry = new FakeRegistry();
+        string sid = WindowsIdentity.GetCurrent().User!.Value;
+        new ShellController(paths, registry).Enable(sid);
+        var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thread = new Thread(() =>
+        {
+            WinBootVideo.App? app = null;
+            try
+            {
+                app = new WinBootVideo.App(); app.InitializeComponent();
+                app.ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
+                var window = new WinBootVideo.MainWindow(paths, registry, startupTasks: new FakeTaskStore { ThrowOnRead = true })
+                {
+                    ShowInTaskbar = false, ShowActivated = false,
+                    WindowStartupLocation = System.Windows.WindowStartupLocation.Manual, Left = -10000, Top = -10000
+                };
+                bool started = false;
+                window.ContentRendered += (_, _) =>
+                {
+                    if (started) return;
+                    started = true;
+                    try
+                    {
+                        var restore = (Button)window.FindName("RestoreButton");
+                        var enable = (Button)window.FindName("EnableButton");
+                        var status = (TextBlock)window.FindName("StatusText");
+                        check(restore.IsEnabled && !enable.IsEnabled,
+                            "GUI 登录任务服务读取失败时保留自己的 Shell 恢复按钮，并禁止继续启用");
+                        restore.RaiseEvent(new System.Windows.RoutedEventArgs(Button.ClickEvent));
+                        check(!registry.Current.Exists && !restore.IsEnabled,
+                            "GUI 恢复按钮实际 Click 即便任务服务故障仍还原自己的 Shell，刷新按钮状态");
+                        check(!enable.IsEnabled && status.Text.Contains("Shell 已恢复", StringComparison.Ordinal)
+                            && status.Text.Contains("登录任务尚未恢复", StringComparison.Ordinal),
+                            "GUI 清楚报告 Shell 已恢复及任务尚未恢复，不把部分失败伪报为完全成功");
+                        completed.TrySetResult();
+                    }
+                    catch (Exception ex) { completed.TrySetException(ex); }
+                    finally { window.Close(); app.Shutdown(); }
+                };
+                window.Show();
+                Dispatcher.Run();
+            }
+            catch (Exception ex) { completed.TrySetException(ex); app?.Shutdown(); }
+        }) { IsBackground = true };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        try { await completed.Task.WaitAsync(TimeSpan.FromSeconds(15)); }
+        finally
+        {
+            thread.Join(3000);
+            Directory.Delete(work, true);
+        }
+    }
+
     public static async Task Run(string bundle, Action<bool, string> check, string? videoPath = null, bool fullscreen = false)
     {
         string work = Path.Combine(Path.GetTempPath(), "WinBootVideo-gui-" + Guid.NewGuid().ToString("N"));
@@ -22,7 +81,7 @@ internal static class GuiFlowChecks
                 app = new WinBootVideo.App(); app.InitializeComponent();
                 app.ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
                 var registry = new FakeRegistry();
-                var window = new WinBootVideo.MainWindow(paths, registry, Path.Combine(bundle, "WinBootVideo.Host.exe"), previewWindowed: !fullscreen)
+                var window = new WinBootVideo.MainWindow(paths, registry, Path.Combine(bundle, "WinBootVideo.Host.exe"), previewWindowed: !fullscreen, startupTasks: new FakeTaskStore())
                 {
                     ShowInTaskbar = false, ShowActivated = false,
                     WindowStartupLocation = System.Windows.WindowStartupLocation.Manual, Left = -10000, Top = -10000

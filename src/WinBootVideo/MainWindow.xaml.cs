@@ -12,6 +12,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
 using WinBootVideo.Core;
+using WinBootVideo.Shared;
 using Forms = System.Windows.Forms;
 
 namespace WinBootVideo;
@@ -20,7 +21,7 @@ public partial class MainWindow : Window
 {
     private readonly AppPaths paths;
     private readonly SettingsStore store;
-    private readonly ShellController shell;
+    private readonly LoginStartupController shell;
     private readonly string previewHost;
     private readonly bool previewWindowed;
     private Settings settings;
@@ -28,12 +29,12 @@ public partial class MainWindow : Window
     private CancellationTokenSource? operation;
     private bool busy;
     private string Sid => WindowsIdentity.GetCurrent().User?.Value ?? throw new InvalidOperationException("无法识别当前用户。");
-    public MainWindow(AppPaths paths, IUserShellRegistry? registry = null, string? previewHost = null, bool previewWindowed = false)
+    public MainWindow(AppPaths paths, IUserShellRegistry? registry = null, string? previewHost = null, bool previewWindowed = false, ILoginTaskStore? startupTasks = null)
     {
         InitializeComponent();
         this.paths = paths;
         store = new SettingsStore(paths);
-        shell = new ShellController(paths, registry);
+        shell = new LoginStartupController(paths, registry, startupTasks);
         this.previewHost = previewHost ?? Path.Combine(AppContext.BaseDirectory, "WinBootVideo.Host.exe");
         this.previewWindowed = previewWindowed;
         try { settings = store.Load(); settings.Validate(false); }
@@ -68,12 +69,21 @@ public partial class MainWindow : Window
     {
         try
         {
-            bool enabled = shell.IsEnabled;
-            StartupBadge.Text = enabled ? "已启用 · 下次登录生效" : "尚未启用";
-            RestoreButton.IsEnabled = !busy && enabled;
+            bool enabled = shell.IsEnabled(Sid);
+            bool owned = shell.HasOwnedStartup(Sid);
+            StartupBadge.Text = enabled ? "已启用 · 下次登录生效" : owned ? "登录启动待修复" : "尚未启用";
+            RestoreButton.IsEnabled = !busy && owned;
+            EnableButton.Content = owned && !enabled ? "04  修复登录启动" : "04  启用登录动画";
             EnableButton.IsEnabled = !busy && !enabled && settings.VideoSha256.Length == 64 && settings.VerifiedVideoSha256 == settings.VideoSha256;
         }
-        catch (Exception ex) { StartupBadge.Text = "无法读取登录配置"; EnableButton.IsEnabled = false; RestoreButton.IsEnabled = false; StatusText.Text = ex.Message; }
+        catch (Exception ex)
+        {
+            StartupBadge.Text = "无法完整读取登录配置"; EnableButton.IsEnabled = false;
+            // A scheduler failure must not prevent recovery of an owned Shell.
+            try { RestoreButton.IsEnabled = !busy && shell.ShellEnabled; }
+            catch { RestoreButton.IsEnabled = false; }
+            StatusText.Text = ex.Message + (RestoreButton.IsEnabled ? " 可先恢复普通登录。" : "");
+        }
     }
     private Settings ReadControls()
     {
@@ -159,14 +169,14 @@ public partial class MainWindow : Window
     private async void PreviewClick(object sender, RoutedEventArgs e) => await WorkAsync("正在保存视频并准备预览…", async token =>
     {
         var draft = ReadControls();
-        if (shell.IsEnabled) shell.Disable(Sid);
+        if (shell.HasOwnedStartup(Sid)) shell.Disable(Sid);
         draft.VerifiedVideoSha256 = ""; // Each saved candidate needs a successful playback receipt.
         settings = await store.ImportAndSaveAsync(draft, token);
         RefreshFile();
         string receipt = Path.Combine(paths.DataDirectory, "preview-" + Guid.NewGuid().ToString("N") + ".json");
         try
         {
-            StatusText.Text = "预览中：按 Esc 或空格跳过。预览不会修改登录配置；已有启用会暂停。";
+            StatusText.Text = "预览中：按 Esc 或空格跳过。自动播放已暂停，成功后请点击“启用登录动画”。";
             var arguments = new[] { "--preview", "--config", paths.SettingsFile, "--data-dir", paths.DataDirectory, "--receipt", receipt }.Concat(previewWindowed ? new[] { "--windowed" } : Array.Empty<string>());
             var result = await MediaTools.RunAsync(previewHost, arguments, TimeSpan.FromSeconds(settings.MaxDurationSeconds + 10), token);
             PreviewReceipt? report = File.Exists(receipt) ? JsonSerializer.Deserialize<PreviewReceipt>(File.ReadAllText(receipt), Settings.JsonOptions) : null;
@@ -189,7 +199,7 @@ public partial class MainWindow : Window
         WriteRecoveryCommand();
         shell.Enable(Sid);
         settings = draft;
-        StatusText.Text = "已启用，下次注销后登录或重启登录生效。此窗口可随时恢复普通登录。";
+        StatusText.Text = "已启用，并已设置备用登录入口。下次登录生效；备用播放可能在桌面刚出现后覆盖。此窗口可随时恢复普通登录。";
     });
     private void WriteRecoveryCommand()
     {
@@ -200,7 +210,7 @@ public partial class MainWindow : Window
     private void RestoreClick(object sender, RoutedEventArgs e)
     {
         try { StatusText.Text = shell.Disable(Sid) ? "已恢复此前的登录配置，下次登录进入普通桌面。" : "当前配置不属于本应用，没有更改。"; RefreshStartup(); }
-        catch (Exception ex) { StatusText.Text = ex.Message; App.Log(paths, ex); }
+        catch (Exception ex) { App.Log(paths, ex); RefreshStartup(); StatusText.Text = ex.Message; }
     }
     private void CancelClick(object sender, RoutedEventArgs e) => operation?.Cancel();
     private void OnClosing(object? sender, CancelEventArgs e)

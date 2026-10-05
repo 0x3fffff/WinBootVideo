@@ -16,6 +16,25 @@ string work = Path.Combine(Path.GetTempPath(), "WinBootVideo-checks-" + Guid.New
 Directory.CreateDirectory(work);
 try
 {
+    if (args.Length == 2 && args[0] == "--startup-repair-only")
+    {
+        await StartupRepairChecks.Run(args[1], Check);
+        Console.WriteLine($"{checks} startup repair CLI checks passed. Unowned isolated data; no real startup writes.");
+        return;
+    }
+    if (args.Length == 1 && args[0] == "--gui-recovery-only")
+    {
+        await GuiFlowChecks.RunRecovery(Check);
+        Console.WriteLine($"{checks} GUI recovery checks passed. Fake registry and unreadable fake task service only.");
+        return;
+    }
+    if (args.Length == 2 && args[0] == "--logon-task-only")
+    {
+        LogonTaskChecks.RunLogic(Check);
+        await LogonTaskChecks.RunCom(args[1], Check);
+        Console.WriteLine($"{checks} logon task checks passed. Only an isolated disabled-trigger GUID preview task was registered and removed.");
+        return;
+    }
     if (args.Length == 2 && args[0] == "--multiscreen-only")
     {
         bool executed = await MultiscreenChecks.Run(args[1], Check);
@@ -97,6 +116,7 @@ try
     Check(left.KillPlayer && left.Reason == "input-desktop-left", "播放后离开输入桌面立即清理，不在下一次解锁续播");
     ColdStartChecks.RunPolicy(Check);
     DesktopLaunchChecks.Run(Check);
+    LogonTaskChecks.RunLogic(Check);
     string sessionKey = LogonSessionIdentity.Read();
     Check(sessionKey == LogonSessionIdentity.Read(), "真实当前登录会话标识稳定，只读访问令牌与会话时间");
     Check(LogonSessionIdentity.Key(1, 0, 100) != LogonSessionIdentity.Key(1, 0, 200), "跨重启 LUID 复用时，不误跳过新的登录");
@@ -150,6 +170,8 @@ try
     if (args.Length == 3 || args.Length == 4)
     {
         await IntegrationChecks.Run(args[0], args[1], args[2], Check);
+        await StartupRepairChecks.Run(args[0], Check);
+        await LogonTaskChecks.RunCom(args[0], Check);
         await MultiscreenChecks.Run(args[0], Check);
         await HiddenDesktopChecks.Run(args[0], Check);
         await GuiFlowChecks.Run(args[0], Check);

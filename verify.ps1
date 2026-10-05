@@ -25,3 +25,5 @@ if ($LASTEXITCODE -ne 0) { throw '集成验证失败。' }
 # separately from the windowed GUI checks above.
 & $sdk run --project (Join-Path $PSScriptRoot 'tests\WinBootVideo.Checks.csproj') -c Release --no-restore --no-build -- --gui-fullscreen-only $bundle
 if ($LASTEXITCODE -ne 0) { throw '真实双屏 GUI 全屏预览验证失败。' }
+& $sdk run --project (Join-Path $PSScriptRoot 'tests\WinBootVideo.Checks.csproj') -c Release --no-restore --no-build -- --gui-recovery-only
+if ($LASTEXITCODE -ne 0) { throw '备用任务不可用时的 GUI 恢复验证失败。' }
