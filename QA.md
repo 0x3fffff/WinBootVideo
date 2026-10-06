@@ -2,6 +2,16 @@
 
 验证日期：2026-10-05。环境：Windows 11 Home China / 25H2（26200.9168），x64 .NET 8 SDK 8.0.422 / WindowsDesktop 8.0.28。自动播放验证全部使用 `--preview`，没有注销、重启或切换用户输入桌面。真实安装和登录配置的变更另行记录，不属于模拟注册表验证。
 
+## 0.2.5 首次安全验证与每次生效指引（2026-10-07）
+
+用户反馈：按首次 shim 文件哈希确认步骤后，单次选择 HackBGRT 已看到自定义 Logo。此为用户本机的实际试启动反馈，不等同于跨设备、默认顺序长期保持、更新或断电条件验收。用户请求将按键步骤写进软件，并询问每次开机如何生效。
+
+GUI 增加首次安全验证的七步展开说明（OK / Enter、5 秒倒计时、MOKManager、文件哈希确认及重启后再次选择 HackBGRT），以及每次开机生效的说明卡片和独立指引按钮。首次步骤与完整导出指南复用同一份文字。说明明确：文件已经保存在 EFI，无需软件常驻；试启动与登录确认正常后，由用户在 BIOS 的 Boot Priority / Boot Order 中把 HackBGRT 放在第一位，保留 Windows Boot Manager，保存退出；软件指引按钮仅显示说明。没有新增固件、默认顺序、MOK 或安全设置的写入功能。
+
+固定目录 `artifacts/WinBootVideo` 已发布 0.2.5.0。`build.ps1 -Test` 通过 **125 项**；既有 `--boot-logo-only artifacts/fixtures/OfficialLogoFiles.exe artifacts/WinBootVideo artifacts/screenshots/logo-guides-bottom.png` 通过 **476 项**。日志为 `artifacts/logs/build.txt` 和 `artifacts/logs/boot-logo-checks.txt`。默认顶部和安装后底部截图 `artifacts/screenshots/logo-guides-top.png`、`logo-guides-bottom.png` 已查看，说明、展开入口及每次生效指引按钮可读。此改动为文案和说明入口，未新增镜像实现的测试；沿用原有 GUI、导出和隔离保护回归。
+
+已更新既有个人应用目录至 0.2.5.0，六个运行文件 SHA-256 与固定发布目录一致；旧程序保留于 `app-backup-0.2.4.0-20261007-024548`。设置、Shell / 登录任务备份、登录标记、HKCU Shell 文本及 ProgramData Logo 恢复资料的全部文件哈希 / 数量保持不变。未重新安装或恢复 Logo，没有自动重启、UAC、EFI / NVRAM / BCD 或安全设置变更。
+
 ## 0.2.4 安装后的自身 Logo 启动项识别（2026-10-07）
 
 用户安装成功后的只读检查把 `Boot0000: HackBGRT` / `\EFI\HackBGRT\loader.efi` 报为不支持的额外项。只读查看已保存的 current.json，Phase 为 Installed、LogoNumber 为 0、WindowsNumber 为 2、文件校验记录有六项；未调用实时固件 API。旧检查始终调用首次安装 Prepare，忽略自身恢复记录。`dotnet run --project tests/WinBootVideo.Checks.csproj -c Release --no-restore -- --installed-logo-only` 在模拟相同安装 → JSON 记录往返 → 再检查路径中捕获同一错误，红日志为 `artifacts/logs/installed-logo-red.txt`。

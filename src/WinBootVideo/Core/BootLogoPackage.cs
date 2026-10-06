@@ -75,7 +75,33 @@ public static class BootLogoPackage
             throw new InvalidDataException("ZIP 条目逃逸准备目录。");
         return full;
     }
-    public static string Guide => """
+    public const string FirstBootGuide = """
+1. 从 Boot Manager 单次选择 HackBGRT。
+2. 若出现 Verification failed / 0x1A 蓝色提示，选 OK，按 Enter。
+3. 随后出现 5 秒倒计时时，立即按任意键进入 MOKManager；错过就重新试启动。
+4. 选择 Enroll hash from disk。
+5. 选择系统盘，进入 EFI → HackBGRT → grubx64.efi。
+6. 选择 Continue → Yes → Reboot，完成该文件的哈希信任确认。
+7. 重启后，再从 Boot Manager 单次选择 HackBGRT，确认新 Logo 显示且 Windows 登录正常。
+
+保持 Secure Boot 开启。只信任上述文件的哈希，不选 Enroll key from disk，不导入整张证书或清空 TPM。
+若没有 MOKManager 菜单或无法继续，选择 Windows Boot Manager 返回系统；先不要将 HackBGRT 设为默认，也不用重复安装。
+""";
+    public const string PermanentGuide = """
+Logo 文件已保存在 EFI 分区，不需要每次重新安装，也不需要让本软件一直运行。单次选择 HackBGRT 只改变这一次启动；以后每次显示，需把它设为默认入口。
+
+1. 先确认通过 HackBGRT 试启动时，新 Logo 显示且 Windows 登录正常。
+2. 进入 BIOS / UEFI，找到 Boot Priority / Boot Order（启动顺序）。
+3. 把 HackBGRT 放到第一位，保留 Windows Boot Manager，并放在它后面；其他设备项原样保留。
+4. 按固件界面提示保存并退出，先重启验证，再验证关机后开机。
+
+本软件当前提供这些设置步骤；默认启动顺序仍由你在 BIOS 中手动设置，界面里的指引按钮不会执行此修改。
+保持现有 Secure Boot、TPM、UEFI / CSM 和 SATA 设置。若以后固件更新或恢复默认设置导致原 Logo 回来，先检查启动顺序，不要立即重装。
+
+安装成功且试启动验证后，可以删除原图片和导出的准备包。保留 C:\ProgramData\WinBootVideo-BootLogo 的恢复资料及另一设备上的恢复说明。
+需要恢复原效果时，先把 Windows Boot Manager 调回第一位，再进入 Windows 使用本软件的“恢复原 Logo”。
+""";
+    public static string Guide => $$"""
 WinBootVideo 开机 Logo · HackBGRT 2.6.0
 
 改变的是 UEFI 启动 Windows 时的静态 BGRT Logo。主板通电后最早的厂商 Logo 可能仍短暂出现。它与登录后视频是两个独立功能。
@@ -101,12 +127,13 @@ BIOS / UEFI 引导：
 从 Windows 进入固件：先保存工作，设置 → 系统 → 恢复 → 高级启动 / 立即重新启动 → 疑难解答 → 高级选项 → UEFI 固件设置 → 重启。这里会重启电脑，需由你手动操作；本软件不自动执行。
 1. 保持现在的 UEFI / CSM / Legacy / SATA 设置。不要为了改 Logo 切换启动模式或清空 Secure Boot 密钥。
 2. 安装成功后，用厂商指定的启动菜单键选择一次 HackBGRT。不同型号按键和菜单名称不同，请查主板/电脑官方手册。
-3. 如果 Secure Boot 已启用，保留它。第一次选择 HackBGRT 可能进入 shim 的 Verification failed / MOKManager。
-   按官方 shim.md：Enroll hash from disk → 系统盘 → EFI → HackBGRT → grubx64.efi → Continue → Yes → Reboot。
-   只信任该文件的哈希，不选 Enroll key from disk，不把 certificate.cer 导入固件证书库，不关闭 TPM。MOK 重启后默认仍为 Windows；再次用启动菜单选 HackBGRT，验证实际 Logo 与登录。
-   若固件拒绝运行 shim 或没有相应菜单，停止并选择 Windows Boot Manager。不要关闭安全功能强行绕过。
-4. 确认 Logo 和 Windows 登录都正常后，才在固件 Boot Priority / Boot Order 中把 HackBGRT 放到 Windows Boot Manager 前面。默认顺序不由本软件自动接管。
-5. 先使用“重启”验证；快速启动可能令“关机再开机”的效果不同。需要时在 Windows 电源选项中了解快速启动设置，本软件不自动修改它。
+
+首次启动：安全验证确认
+{{FirstBootGuide}}
+
+让每次开机都生效
+{{PermanentGuide}}
+快速启动可能令“关机再开机”的效果不同。需要时在 Windows 电源选项中了解快速启动设置，本软件不自动修改它。
 
 图片：
 选择本地静态 PNG / JPEG / BMP，最多 16 MB、2000 万像素、每边最多 8192。软件保留比例缩放，透明区域铺黑，生成正向高度、24 位未压缩、54 字节头的 BMP3。

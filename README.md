@@ -1,10 +1,10 @@
-# WinBootVideo 0.2.4
+# WinBootVideo 0.2.5
 
 Windows 11 的**登录后动画**工具。完成密码 / PIN / 图片密码验证、登录画面退场后，显示全屏视频，再淡出到桌面。0.1.6 采用桌面前模式：视频呈现后才允许本宿主启动 Explorer，覆盖层保持到动画淡出；不使用桌面出现后再播放的备用入口。每次登录播放一次，锁屏解锁不重复；注销后重新登录会再播放。
 
 这一版用 C# / WPF 编写，提供中文浅色 GUI，可选视频、检查、转码、预览、启用和恢复。初次运行不会更改登录配置。新增独立的“开机 Logo”向导，使用固定版本 HackBGRT 更换 UEFI 启动 Windows 时的静态 BGRT 图片；不刷主板固件，不替换 Windows 转圈动画或锁屏画面。
 
-## 开机 Logo（0.2.4）
+## 开机 Logo（0.2.5）
 
 在左侧点击“开机 Logo”，按“选图 → 导出准备包 → 管理员只读检查 → 恢复确认 → 安装”操作。登录视频与开机 Logo 的启用和恢复分别管理。普通界面和登录播放器继续使用普通权限；Logo 的检查、安装和恢复在单独辅助进程中申请 UAC。
 
@@ -13,6 +13,8 @@ Windows 11 的**登录后动画**工具。完成密码 / PIN / 图片密码验�
 保持电脑现有 UEFI、Secure Boot、TPM、CSM 和 SATA 设置，**不需要先关闭安全启动、手动挂载 EFI 或分配盘符**。准备可启动的 Windows 恢复 U 盘、可用的帐户密码（不要只依赖 PIN）、另一设备上的恢复说明，并查好电脑官方的启动菜单入口。软件负责检查当前分区及启动项；若加密、多 EFI 分区或未知状态不支持安装，请停止，不为改 Logo 解密磁盘或关闭安全功能。
 
 Secure Boot 开启时，首次 shim 哈希确认在安装后的单次试启动中进行；默认启动顺序只在 Logo 和 Windows 登录均验证成功后再手动调整。完整步骤见下文。
+
+0.2.5 将首次 shim 确认的完整按键步骤和每次开机生效方法写入软件界面与导出的说明。Logo 已保存在 EFI 分区，试启动成功后只需在 BIOS 的 Boot Priority / Boot Order 中把 HackBGRT 调到第一位，保留 Windows Boot Manager；软件中的“打开每次生效指引”仅显示步骤，不自动修改默认入口。
 
 0.2.4 修复安装成功后再次检查，把本软件创建的 `Boot0000: HackBGRT` 误报为不支持的额外项。只读检查依据受保护的 Installed 恢复记录，核对当前分区、原 Windows 项、自身启动项完整字节、已保存设备项、六个文件哈希和启动器备份；核验通过后显示“已安装，无需重复安装”，不开放重复安装。支持单次试启动及手动设为默认后的状态检查；无记录的同名项、文件 / 固件变化仍停止。更换图片时先恢复原 Logo，再重新准备和安装。此修复不重新安装、不改变启动顺序；现有用户只需更新应用并再次只读检查。
 
@@ -47,8 +49,8 @@ EFI 分区必须有至少 20 MB 可用空间。空间不足或读不到时停止
 1. 先准备可启动的 Windows 恢复 U 盘，把恢复说明保存到另一设备，确认现有帐户密码可用。GUI 不代替用户格式化 U 盘。
 2. 保持目前 UEFI、CSM、SATA、TPM 设置，不清空安全启动密钥；不要切换 Legacy 模式。进入固件可按微软的 [Windows 11 固件入口说明](https://support.microsoft.com/en-us/windows/security/devicesecurity/windows-11-and-secure-boot)，从“设置 → 系统 → 恢复 → 高级启动 → 疑难解答 → 高级选项 → UEFI 固件设置”手动重启进入。先保存工作，软件不会自动重启。
 3. 安装后查电脑厂商官方手册中的启动菜单键，**单次选择 HackBGRT**。此时 Windows Boot Manager 仍是默认。
-4. Secure Boot 已开启时保留它。根据官方 [shim 指引](https://github.com/Metabolix/HackBGRT/blob/v2.6.0/shim.md)，首次可能需在 MOKManager 中 `Enroll hash from disk → EFI → HackBGRT → grubx64.efi`。选择文件哈希，避免信任整张证书。MOK 重启后需再次单次选择 HackBGRT。若固件拒绝 shim，返回 Windows Boot Manager 并停止；本软件不提供关闭安全功能的绕过方式。
-5. 实际看到 Logo 且 Windows 登录正常后，才在固件 Boot Priority / Boot Order 中手动把 HackBGRT 放到第一位。先以“重启”验证；快速启动可能影响关机后开机的表现。
+4. Secure Boot 已开启时保留它。出现蓝色验证错误时，选 OK 并按 Enter，随后在 5 秒倒计时内立即按任意键进入 MOKManager（错过则再次试启动）。根据官方 [shim 指引](https://github.com/Metabolix/HackBGRT/blob/v2.6.0/shim.md)，首次可能需在 MOKManager 中 `Enroll hash from disk → EFI → HackBGRT → grubx64.efi`。选择文件哈希，避免信任整张证书。MOK 重启后需再次单次选择 HackBGRT。若固件拒绝 shim，返回 Windows Boot Manager 并停止；本软件不提供关闭安全功能的绕过方式。
+5. 实际看到 Logo 且 Windows 登录正常后，才在固件 Boot Priority / Boot Order 中手动把 HackBGRT 放到第一位，保留 Windows Boot Manager 并置于其后，再按固件界面提示保存退出。单次选择只改变当次启动；默认入口改变后才每次生效。Logo 文件已保存在 EFI 分区，无需每次重装或让本软件常驻。软件提供设置指引，当前不提供一键设置默认入口。先以“重启”验证；快速启动可能影响关机后开机的表现。
 
 启动链变化可能影响 Windows Hello / PIN 和依赖 TPM 的反作弊。初版阻止加密系统的安装，不读取恢复密钥。请结合微软的 [BitLocker 恢复说明](https://learn.microsoft.com/windows/security/operating-system-security/data-protection/bitlocker/recovery-overview) 了解启动链变化的影响，不能把“已暂停 BitLocker”误认为“未加密”。
 

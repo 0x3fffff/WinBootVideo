@@ -31,6 +31,8 @@ public partial class BootLogoWindow : Window
         InitializeComponent(); this.paths = paths; execute = executor ?? RunElevated;
         confirm = confirmation ?? (text => MessageBox.Show(this, text, "开机 Logo · 确认操作", MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK);
         readJournal = journalReader ?? BootLogoInstaller.ReadJournal;
+        FirstBootGuideText.Text = BootLogoPackage.FirstBootGuide;
+        PermanentGuideText.Text = BootLogoPackage.PermanentGuide;
         Refresh(); Closing += (_, e) => { if (busy) { e.Cancel = true; LogoStatus.Text = "请等待操作完成。安装或恢复进行中不能关闭窗口。"; } };
     }
     private void Refresh()
@@ -172,6 +174,8 @@ public partial class BootLogoWindow : Window
     }
     private void GuideClick(object sender, RoutedEventArgs e)
         => ShowText("开机 Logo · 图片、BIOS 与恢复说明", BootLogoPackage.Guide);
+    private void PermanentGuideClick(object sender, RoutedEventArgs e)
+        => ShowText("开机 Logo · 每次开机生效", BootLogoPackage.PermanentGuide);
     private void RequirementsClick(object sender, RoutedEventArgs e)
     {
         Refresh(); ShowText("开机 Logo · 安装条件", InstallHint.Text);
