@@ -2,6 +2,18 @@
 
 验证日期：2026-10-05。环境：Windows 11 Home China / 25H2（26200.9168），x64 .NET 8 SDK 8.0.422 / WindowsDesktop 8.0.28。自动播放验证全部使用 `--preview`，没有注销、重启或切换用户输入桌面。真实安装和登录配置的变更另行记录，不属于模拟注册表验证。
 
+## 0.2.4 安装后的自身 Logo 启动项识别（2026-10-07）
+
+用户安装成功后的只读检查把 `Boot0000: HackBGRT` / `\EFI\HackBGRT\loader.efi` 报为不支持的额外项。只读查看已保存的 current.json，Phase 为 Installed、LogoNumber 为 0、WindowsNumber 为 2、文件校验记录有六项；未调用实时固件 API。旧检查始终调用首次安装 Prepare，忽略自身恢复记录。`dotnet run --project tests/WinBootVideo.Checks.csproj -c Release --no-restore -- --installed-logo-only` 在模拟相同安装 → JSON 记录往返 → 再检查路径中捕获同一错误，红日志为 `artifacts/logs/installed-logo-red.txt`。
+
+修复将首次安装和已有安装的只读核验分开。已有安装须匹配受保护记录、当前分区、完整固件项数据及属性、原 Windows 项、已保存 Insyde 设备项、六文件哈希及 Windows 文件 / 恢复备份；记录副本及普通用户只读权限也校验。只有核验成功才返回 AlreadyInstalled；GUI 显示“已安装，无需重复安装”，保留恢复入口，安装事件不会重复执行。单次从 Logo 启动或用户手动将它设为默认可正确报告；无记录、未知 / Restored / Failed 记录、记录或启动项变化、额外未知项、BootNext 异常和文件验证失败均停止。首次安装的严格规则和现有写入 / 恢复事务未放宽。
+
+固定发布目录 0.2.4.0 最终执行 `--boot-logo-only artifacts/fixtures/OfficialLogoFiles.exe artifacts/WinBootVideo artifacts/screenshots/logo-installed-ui.png`，**476 项通过**（`artifacts/logs/boot-logo-checks.txt`）；包含新增 26 项已有安装重放与权限检查、6 项 GUI 状态检查及 4 项官方临时文件 / 备份损坏检查。`build.ps1 -Test` **125 项通过**（`artifacts/logs/build.txt`）。GUI 截图 `artifacts/screenshots/logo-installed-ui.png` 已查看，提示、禁用安装和可用恢复入口可读。实际 GUI 的安装、恢复与检查执行器全部为模拟；官方文件只复制到普通临时模拟 ESP。
+
+已保存的真实恢复目录及文件只读核对：目录 / current.json / recovery.json / Windows 备份均由 Administrators 拥有，Users 只有 ReadAndExecute；两份记录哈希一致，Windows 备份匹配记录。未为测试调整其 ACL，未执行真实 Logo 安装 / 恢复、EFI / NVRAM / BCD 写入、UAC 或重启；实际首次试启动仍需用户验证。
+
+已更新既有个人应用目录为 0.2.4.0；六个运行文件 SHA-256 与固定发布目录相同。旧应用保留于 `app-backup-0.2.3.0-20261007-014301`；用户设置、Shell / 登录任务原备份、登录标记及 HKCU Shell 文本保持不变，ProgramData Logo 恢复目录全部文件哈希和文件数量保持不变。现有 Installed Logo 记录没有被重新安装或恢复。
+
 ## 0.2.3 官方安装器卷 GUID 路径兼容（2026-10-07）
 
 用户实际安装失败于官方 `InitEspPath → Esp.TryPath`，提示 “The ESP path doesn't look like an EFI System Partition.”。只读恢复记录为 Restored、InstalledFiles 为空，保存原始错误和恢复资料；这不是安装成功记录。此前直接调用 InstallFiles 的夹具没有覆盖初始化路径。

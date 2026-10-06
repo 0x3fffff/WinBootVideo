@@ -68,6 +68,76 @@ internal static class BootLogoChecks
         foreach (var entry in InsydeEntries) firmware.Values[BootLogoRegistration.Name(entry.Number)] = new(7, Convert.FromBase64String(entry.Raw));
         return firmware;
     }
+    public static void RunInstalledProbe(Action<bool, string> check)
+    {
+        var firmware = InsydeFirmware();
+        var registration = new BootLogoRegistration(firmware, "INSYDE Corp.");
+        var plan = registration.Prepare(Partition);
+        registration.Apply(plan);
+        var journal = new BootLogoJournal { Phase = "Installed", Plan = plan, EspVolume = Volume, PartitionGuid = Partition.ToString(),
+            WindowsLoaderHash = new string('a', 64), InstalledFiles = new[] { "config.txt", "splash.bmp", "loader.efi", "grubx64.efi", "mmx64.efi", "certificate.cer" }.ToDictionary(name => name, _ => new string('b', 64)) };
+        journal = System.Text.Json.JsonSerializer.Deserialize<BootLogoJournal>(System.Text.Json.JsonSerializer.Serialize(journal, Settings.JsonOptions), Settings.JsonOptions)!;
+        firmware.Writes.Clear();
+        BootLogoEnvironment Environment() => new() { Administrator = true, Uefi = true, X64 = true, SecureBoot = true,
+            OsFullyDecrypted = true, EspCount = 1, EspOnOsDisk = true, EspVolume = Volume, EspPartitionGuid = Partition.ToString(),
+            EspFreeBytes = 64L * 1024 * 1024, FirmwareManufacturer = "INSYDE Corp.", CheckedUtc = DateTime.UtcNow };
+        int fileChecks = 0;
+        var response = BootLogoInstaller.ProbeFirmware(Environment(), firmware, journal, _ => fileChecks++);
+        check(response.Success && response.AlreadyInstalled && response.Message.Contains("已安装") && response.Message.Contains("Windows Boot Manager 仍是默认"), "安装成功后的 Boot0000 不应再次被只读检查报为额外固件项：" + response.Message);
+        check(fileChecks == 1 && response.Environment!.FirmwareDetails.Contains("已安装并核验"), "已有安装只读检查确实执行文件验证并在详情标明记录归属");
+        check(firmware.Writes.Count == 0, "安装后状态检查不能写入固件");
+        var roundTrip = System.Text.Json.JsonSerializer.Deserialize<BootLogoResponse>(System.Text.Json.JsonSerializer.Serialize(response, Settings.JsonOptions), Settings.JsonOptions)!;
+        check(roundTrip.Success && roundTrip.AlreadyInstalled, "辅助报告 JSON 往返保留已安装状态");
+        var savedOrder = firmware.Read("BootOrder")!;
+        firmware.Values["BootCurrent"] = new(6, BitConverter.GetBytes(plan.Number));
+        response = BootLogoInstaller.ProbeFirmware(Environment(), firmware, journal, _ => { });
+        check(response.Success && response.AlreadyInstalled, "通过 Logo 单次试启动进入 Windows 后可以检查已有安装");
+        firmware.Values["BootOrder"] = new(7, new ushort[] { plan.Number, 2, 0x2001, 0x2002, 0x2003 }.SelectMany(BitConverter.GetBytes).ToArray());
+        response = BootLogoInstaller.ProbeFirmware(Environment(), firmware, journal, _ => { });
+        check(response.Success && response.Message.Contains("HackBGRT 当前为默认"), "用户手动设置 Logo 为默认后仍准确显示已安装，而非要求默认 Windows");
+        firmware.Values["BootOrder"] = savedOrder;
+        firmware.Values["BootCurrent"] = new(6, BitConverter.GetBytes((ushort)2));
+        firmware.Values["BootNext"] = new(7, BitConverter.GetBytes(plan.Number));
+        check(BootLogoInstaller.ProbeFirmware(Environment(), firmware, journal, _ => { }).AlreadyInstalled, "已设置本软件单次试启动时只读识别，不改 BootNext");
+        firmware.Values.Remove("BootNext");
+        void MustReject(string reason, Action change, Action reset)
+        {
+            change();
+            try { var result = BootLogoInstaller.ProbeFirmware(Environment(), firmware, journal, _ => { }); check(!result.Success && !result.AlreadyInstalled, reason); }
+            finally { reset(); }
+        }
+        var own = firmware.Read("Boot0000")!;
+        MustReject("自身启动项属性发生变化仍停止，不仅凭 HackBGRT 名称放行", () => firmware.Values["Boot0000"] = new(3, own.Data), () => firmware.Values["Boot0000"] = own);
+        MustReject("自身启动项完整字节变化仍停止", () => firmware.Values["Boot0000"] = new(7, own.Data.Concat(new byte[] { 1 }).ToArray()), () => firmware.Values["Boot0000"] = own);
+        MustReject("自身项缺失不会伪报已安装", () => firmware.Values.Remove("Boot0000"), () => firmware.Values["Boot0000"] = own);
+        MustReject("Windows 项变化仍停止", () => firmware.Values["Boot0002"] = new(3, plan.WindowsEntry.Data), () => firmware.Values["Boot0002"] = plan.WindowsEntry);
+        MustReject("记录之外新增固件项仍停止", () => firmware.Values["Boot0008"] = own, () => firmware.Values.Remove("Boot0008"));
+        var device = firmware.Read("Boot2001")!;
+        MustReject("记录中的 Insyde 设备项变化仍停止", () => firmware.Values["Boot2001"] = new(3, device.Data), () => firmware.Values["Boot2001"] = device);
+        MustReject("启动顺序缺少自身项仍停止", () => firmware.Values["BootOrder"] = plan.OriginalOrder, () => firmware.Values["BootOrder"] = savedOrder);
+        MustReject("本次从未知启动项进入时不误报已核验", () => firmware.Values["BootCurrent"] = new(6, BitConverter.GetBytes((ushort)8)), () => firmware.Values["BootCurrent"] = new(6, BitConverter.GetBytes((ushort)2)));
+        MustReject("未知 BootNext 不因已有 Logo 而放行", () => firmware.Values["BootNext"] = new(7, BitConverter.GetBytes((ushort)8)), () => firmware.Values.Remove("BootNext"));
+        MustReject("错误分区恢复记录不能授权同名 Logo", () => journal.PartitionGuid = Guid.NewGuid().ToString(), () => journal.PartitionGuid = Partition.ToString());
+        MustReject("失败或未完成的恢复记录不能伪报已安装", () => journal.Phase = "Failed", () => journal.Phase = "Installed");
+        MustReject("Restored 记录不能授权仍存在的旧 Logo", () => journal.Phase = "Restored", () => journal.Phase = "Installed");
+        MustReject("损坏恢复计划仍停止", () => journal.Plan = plan with { Number = 8 }, () => journal.Plan = plan);
+        MustReject("缺少文件哈希不能据此识别已有安装", () => journal.InstalledFiles.Remove("loader.efi"), () => journal.InstalledFiles["loader.efi"] = new string('b', 64));
+        var noJournal = BootLogoInstaller.ProbeFirmware(Environment(), firmware, null, _ => { });
+        check(!noJournal.Success && !noJournal.AlreadyInstalled, "无本软件恢复记录的同名 HackBGRT 仍作为未知额外项拒绝");
+        var badFiles = BootLogoInstaller.ProbeFirmware(Environment(), firmware, journal, _ => throw new IOException("文件哈希不一致"));
+        check(!badFiles.Success && !badFiles.AlreadyInstalled && badFiles.Message.Contains("文件哈希不一致"), "文件验证失败不能仅凭固件记录伪报已安装");
+        check(firmware.Writes.Count == 0, "成功与全部失败的安装后检查均不修改固件");
+        var security = new System.Security.AccessControl.DirectorySecurity();
+        var admins = new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.BuiltinAdministratorsSid, null);
+        var users = new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.BuiltinUsersSid, null);
+        security.SetOwner(admins);
+        security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(admins, System.Security.AccessControl.FileSystemRights.FullControl, System.Security.AccessControl.AccessControlType.Allow));
+        security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(users, System.Security.AccessControl.FileSystemRights.ReadAndExecute, System.Security.AccessControl.AccessControlType.Allow));
+        BootLogoInstaller.CheckReadOnlyProtection(security);
+        check(true, "管理员拥有且普通用户只读的恢复权限可核验；不写真实 ACL");
+        security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(users, System.Security.AccessControl.FileSystemRights.Write, System.Security.AccessControl.AccessControlType.Allow));
+        Reject(() => BootLogoInstaller.CheckReadOnlyProtection(security), check, "普通用户可写的恢复资料不能用于授权归属");
+    }
     public static void RunInsydeEntries(Action<bool, string> check)
     {
         foreach (var entry in InsydeEntries)
@@ -256,7 +326,7 @@ internal static class BootLogoChecks
             f.FailAt = 0; r.Restore(p); check(f.Read(BootLogoRegistration.Name(p.Number)) == null, "恢复中断后可以再次恢复");
         }
     }
-    public static Task RunGui(Action<bool, string> check, string work)
+    public static Task RunGui(Action<bool, string> check, string work, string? installedScreenshot = null)
     {
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
@@ -270,17 +340,20 @@ internal static class BootLogoChecks
                 var source = BitmapSource.Create(80, 40, 96, 96, PixelFormats.Bgra32, null, rgba, 80 * 4);
                 string input = Path.Combine(work, "半透明 Logo.png"); var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(source));
                 using (var file = File.Create(input)) png.Save(file);
-                int probeCount = 0, installCount = 0; bool rejectedProbe = false, staleProbe = false;
+                int probeCount = 0, installCount = 0, restoreCount = 0; bool rejectedProbe = false, staleProbe = false, installedRecord = false;
                 var window = new BootLogoWindow(new AppPaths(Path.Combine(work, "data")), request =>
                 {
-                    if (request.Action == "install") { installCount++; return Task.FromResult(new BootLogoResponse { Success = true, Message = "模拟安装完成" }); }
+                    if (request.Action == "install") { installCount++; installedRecord = true; return Task.FromResult(new BootLogoResponse { Success = true, AlreadyInstalled = true, Message = "模拟安装完成" }); }
+                    if (request.Action == "restore") { restoreCount++; installedRecord = false; return Task.FromResult(new BootLogoResponse { Success = true, Message = "模拟恢复完成" }); }
                     probeCount++;
-                    return Task.FromResult(new BootLogoResponse { Success = probeCount > 1 && !rejectedProbe, Message = probeCount > 1 ? "模拟检查通过" : "模拟未知加密",
+                    return Task.FromResult(new BootLogoResponse { Success = probeCount > 1 && !rejectedProbe, AlreadyInstalled = installedRecord,
+                        Message = installedRecord ? "已安装并核验本软件的 Boot0000。Windows Boot Manager 仍是默认；请单次选择 HackBGRT 试启动。" : probeCount > 1 ? "模拟检查通过" : "模拟未知加密",
                         Environment = new BootLogoEnvironment { Administrator = true, Uefi = true, X64 = true, SecureBoot = true,
                             OsFullyDecrypted = probeCount > 1 ? true : null, EspCount = 1, EspOnOsDisk = true, EspVolume = Volume,
                             EspPartitionGuid = Partition.ToString(), EspFreeBytes = 64L * 1024 * 1024,
                             FirmwareDetails = "模拟 Boot0007 设备项 · 无真实固件调用", CheckedUtc = DateTime.UtcNow.AddMinutes(staleProbe ? -11 : 0) } });
-                }, _ => true) { ShowInTaskbar = false, ShowActivated = false, WindowStartupLocation = WindowStartupLocation.Manual, Left = -10000, Top = -10000 };
+                }, _ => true, () => installedRecord ? new BootLogoJournal { Phase = "Installed" } : null)
+                { ShowInTaskbar = false, ShowActivated = false, WindowStartupLocation = WindowStartupLocation.Manual, Left = -10000, Top = -10000 };
                 var install = (Button)window.FindName("InstallLogoButton"); var export = (Button)window.FindName("ExportButton");
                 var probe = (Button)window.FindName("ProbeButton");
                 var rescue = (CheckBox)window.FindName("RescueCheck"); var trial = (CheckBox)window.FindName("TrialCheck"); var shim = (CheckBox)window.FindName("ShimCheck");
@@ -326,7 +399,33 @@ internal static class BootLogoChecks
                         check(!install.IsEnabled && hint.Text.Contains("过期"), "检查过期时禁用安装并明确提示重新检查"); staleProbe = false;
                         probe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); check(install.IsEnabled, "重新通过检查后恢复可安装状态");
                         install.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                        check(installCount == 1 && !install.IsEnabled && ((TextBlock)window.FindName("LogoStatus")).Text == "模拟安装完成", "实际 GUI 点击走确认与执行流程，完成后要求重新检查；执行器全部为模拟");
+                        check(installCount == 1 && !install.IsEnabled && ((TextBlock)window.FindName("LogoStatus")).Text == "模拟安装完成" && hint.Text.Contains("已安装") && !hint.Text.Contains("暂不能安装"), "实际 GUI 安装成功后明确已安装，不再提示缺少只读检查；执行器全部为模拟");
+                        probe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        var restore = (Button)window.FindName("RestoreLogoButton");
+                        check(!install.IsEnabled && restore.IsEnabled && hint.Text.Contains("无需重复安装"), "安装后重新检查显示已安装并保留恢复入口，不鼓励重复安装");
+                        install.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        check(installCount == 1, "已安装状态即使触发安装事件也不会再次执行安装");
+                        rejectedProbe = true; probe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        check(!install.IsEnabled && hint.Text.Contains("只读检查未通过"), "失败报告即使包含 AlreadyInstalled 也不能被当成核验成功");
+                        rejectedProbe = false; probe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        if (installedScreenshot != null)
+                        {
+                            ((ScrollViewer)window.FindName("LogoScroll")).ScrollToBottom();
+                            window.UpdateLayout(); Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+                            var root = (FrameworkElement)window.Content;
+                            root.Measure(new Size(1000, 740)); root.Arrange(new Rect(0, 0, 1000, 740)); root.UpdateLayout();
+                            var capture = new RenderTargetBitmap(1000, 740, 96, 96, PixelFormats.Pbgra32);
+                            var background = new DrawingVisual();
+                            using (var drawing = background.RenderOpen()) drawing.DrawRectangle(window.Background, null, new Rect(0, 0, 1000, 740));
+                            capture.Render(background);
+                            capture.Render(root); var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(capture));
+                            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(installedScreenshot))!);
+                            using var output = File.Create(installedScreenshot); encoder.Save(output);
+                        }
+                        restore.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        check(restoreCount == 1 && !restore.IsEnabled && !install.IsEnabled && hint.Text.Contains("只读检查"), "模拟恢复完成后清除已安装状态，要求重新检查");
+                        probe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        check(install.IsEnabled, "恢复后重新检查通过才重新允许安装");
                         done.TrySetResult();
                     }
                     catch (Exception ex) { done.TrySetException(ex); }
@@ -357,7 +456,20 @@ internal static class BootLogoChecks
         check(File.ReadAllBytes(windows).SequenceEqual(new byte[] { 70, 71, 72 }), "实际官方文件复制方法保留模拟 Windows 启动器字节");
         var hashes = Directory.GetFiles(fakeEsp).ToDictionary(p => Path.GetFileName(p)!, BootLogoPackage.HashFile);
         BootLogoInstaller.VerifyFiles(fakeEsp, hashes);
+        string backup = Path.Combine(work, "fake-windows.backup"); File.Copy(windows, backup);
+        var journal = new BootLogoJournal { WindowsLoaderHash = BootLogoPackage.HashFile(windows), InstalledFiles = hashes };
+        BootLogoInstaller.VerifyInstalledFiles(journal, windows, fakeEsp, backup);
+        check(true, "安装后文件检查使用生产路径校验实际官方六文件及模拟 Windows / 备份哈希");
+        File.WriteAllBytes(backup, new byte[] { 0 });
+        Reject(() => BootLogoInstaller.VerifyInstalledFiles(journal, windows, fakeEsp, backup), check, "安装后检查拒绝损坏的 Windows 恢复备份");
+        File.Copy(windows, backup, true); File.WriteAllBytes(windows, new byte[] { 0 });
+        Reject(() => BootLogoInstaller.VerifyInstalledFiles(journal, windows, fakeEsp, backup), check, "安装后检查拒绝变化的 Windows 启动器文件");
+        File.Copy(backup, windows, true);
+        string loader = Path.Combine(fakeEsp, "loader.efi"); byte[] loaderBytes = File.ReadAllBytes(loader); File.Delete(loader);
+        Reject(() => BootLogoInstaller.VerifyInstalledFiles(journal, windows, fakeEsp, backup), check, "安装后检查拒绝缺失的 Logo 文件");
+        File.WriteAllBytes(loader, loaderBytes);
         File.WriteAllText(Path.Combine(fakeEsp, "foreign.txt"), "external");
+        Reject(() => BootLogoInstaller.VerifyInstalledFiles(journal, windows, fakeEsp, backup), check, "安装后检查拒绝未知外来文件");
         Reject(() => BootLogoInstaller.VerifyFiles(fakeEsp, hashes), check, "已有 Logo 目录含外来文件时拒绝重装覆盖");
         File.Delete(Path.Combine(fakeEsp, "foreign.txt")); File.WriteAllBytes(Path.Combine(fakeEsp, "loader.efi"), new byte[] { 0 });
         Reject(() => BootLogoInstaller.VerifyOfficialFiles(fakeEsp, stage, bmp), check, "官方 EFI 文件损坏时生产校验阻止注册");

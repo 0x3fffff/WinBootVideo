@@ -21,6 +21,7 @@ public sealed class BootLogoRequest
 }
 public sealed class BootLogoResponse
 {
+    public bool AlreadyInstalled { get; set; }
     public bool Success { get; set; }
     public string Message { get; set; } = "";
     public BootLogoEnvironment? Environment { get; set; }
@@ -53,19 +54,12 @@ public static class BootLogoInstaller
         var environment = await BootLogoProbe.ReadAsync();
         if (request.Action == "probe")
         {
-            var blockers = environment.Blockers();
-            if (blockers.Count == 0)
+            if (environment.Blockers().Count == 0)
             {
-                try
-                {
-                    var registration = new BootLogoRegistration(new BootLogoNativeFirmware(), environment.FirmwareManufacturer);
-                    environment.FirmwareDetails = registration.Inspect();
-                    registration.Prepare(Guid.Parse(environment.EspPartitionGuid));
-                }
-                catch (Exception ex) { environment.Error = ex.Message; blockers = environment.Blockers(); }
+                try { return ProbeFirmware(environment, new BootLogoNativeFirmware(), ReadJournal(), journal => VerifyInstalledJournal(environment, journal)); }
+                catch (Exception ex) { environment.Error = ex.Message; }
             }
-            return new BootLogoResponse { Success = blockers.Count == 0, Environment = environment,
-                Message = blockers.Count == 0 ? "只读检查通过；尚未安装。正式安装时会重新检查。" : string.Join("\n", blockers) };
+            return new BootLogoResponse { Success = false, Environment = environment, Message = string.Join("\n", environment.Blockers()) };
         }
         // Restoration can be necessary even if encryption or Secure Boot was changed after installation.
         if (!environment.Administrator || !environment.Uefi || !environment.X64) throw new InvalidOperationException("恢复 / 安装需要管理员权限与 UEFI x64。");
@@ -84,6 +78,77 @@ public static class BootLogoInstaller
             return await InstallAsync(request, environment);
         }
         finally { if (entered) mutex.ReleaseMutex(); }
+    }
+    internal static BootLogoResponse ProbeFirmware(BootLogoEnvironment environment, IBootLogoFirmware firmware,
+        BootLogoJournal? journal, Action<BootLogoJournal> verifyInstalledFiles)
+    {
+        if (environment.Blockers().Count != 0)
+            return new BootLogoResponse { Environment = environment, Message = string.Join("\n", environment.Blockers()) };
+        try
+        {
+            var registration = new BootLogoRegistration(firmware, environment.FirmwareManufacturer);
+            environment.FirmwareDetails = registration.Inspect();
+            if (journal != null && journal.Phase != "Restored")
+            {
+                if (journal.Phase != "Installed") throw new InvalidDataException("存在未完成的 Logo 操作记录，请先查看恢复说明；不要重复安装。");
+                if (journal.Schema != 1 || journal.Plan == null || !Guid.TryParse(journal.PartitionGuid, out var partition) ||
+                    partition != Guid.Parse(environment.EspPartitionGuid) || !journal.EspVolume.Equals(environment.EspVolume, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("Logo 恢复记录与当前分区不一致，不能确认安装状态。");
+                if (journal.InstalledFiles.Count != ExpectedFiles.Length || ExpectedFiles.Any(name => !journal.InstalledFiles.ContainsKey(name)) ||
+                    journal.InstalledFiles.Values.Append(journal.WindowsLoaderHash).Any(hash => hash == null || hash.Length != 64 || hash.Any(c => !Uri.IsHexDigit(c))))
+                    throw new InvalidDataException("Logo 文件校验记录不完整。");
+                verifyInstalledFiles(journal);
+                string message = registration.VerifyInstalled(journal.Plan, partition);
+                environment.FirmwareDetails += "\n\n" + message;
+                return new BootLogoResponse { Success = true, AlreadyInstalled = true, Environment = environment,
+                    RecoveryDirectory = journal.RecoveryDirectory, Message = message };
+            }
+            registration.Prepare(Guid.Parse(environment.EspPartitionGuid));
+        }
+        catch (Exception ex) { environment.Error = ex.Message; }
+        var blockers = environment.Blockers();
+        return new BootLogoResponse { Success = blockers.Count == 0, Environment = environment,
+            Message = blockers.Count == 0 ? "只读检查通过；尚未安装。正式安装时会重新检查。" : string.Join("\n", blockers) };
+    }
+    private static void VerifyInstalledJournal(BootLogoEnvironment environment, BootLogoJournal journal)
+    {
+        string root = Path.GetFullPath(StateRoot), recovery = Path.GetFullPath(journal.RecoveryDirectory);
+        if (!recovery.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+            !Guid.TryParseExact(Path.GetFileName(recovery), "N", out _) || Path.GetDirectoryName(recovery) != root)
+            throw new InvalidDataException("Logo 恢复记录路径无效。");
+        string mirror = Path.Combine(recovery, "recovery.json"), backup = Path.Combine(recovery, "bootmgfw.efi.backup");
+        foreach (string directory in new[] { root, recovery })
+        {
+            BootLogoPaths.OrdinaryDirectory(directory);
+            CheckReadOnlyProtection(new DirectoryInfo(directory).GetAccessControl());
+        }
+        foreach (string file in new[] { StateFile, mirror, backup })
+        {
+            if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0) throw new InvalidDataException("恢复记录不允许为链接。");
+            CheckReadOnlyProtection(new FileInfo(file).GetAccessControl());
+        }
+        if (!File.ReadAllBytes(StateFile).SequenceEqual(File.ReadAllBytes(mirror))) throw new InvalidDataException("Logo 恢复记录副本不一致，停止检查。");
+        string windows = Path.Combine(environment.EspVolume, @"EFI\Microsoft\Boot\bootmgfw.efi");
+        VerifyInstalledFiles(journal, windows, Path.Combine(environment.EspVolume, @"EFI\HackBGRT"), backup);
+    }
+    internal static void VerifyInstalledFiles(BootLogoJournal journal, string windows, string logo, string backup)
+    {
+        if (!BootLogoPackage.HashFile(backup).Equals(journal.WindowsLoaderHash, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Windows 启动器恢复备份校验失败。");
+        CheckWindows(windows, journal.WindowsLoaderHash);
+        if ((File.GetAttributes(logo) & FileAttributes.ReparsePoint) != 0 || ExpectedFiles.Any(name => (File.GetAttributes(Path.Combine(logo, name)) & FileAttributes.ReparsePoint) != 0))
+            throw new InvalidDataException("Logo 安装目录不允许为链接。");
+        VerifyFiles(logo, journal.InstalledFiles);
+    }
+    internal static void CheckReadOnlyProtection(FileSystemSecurity security)
+    {
+        var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+        var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+        var owner = security.GetOwner(typeof(SecurityIdentifier));
+        if (!admins.Equals(owner) && !system.Equals(owner)) throw new InvalidDataException("恢复资料不属于管理员或系统。");
+        const FileSystemRights write = FileSystemRights.Write | FileSystemRights.Delete | FileSystemRights.DeleteSubdirectoriesAndFiles | FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership;
+        foreach (FileSystemAccessRule rule in security.GetAccessRules(true, true, typeof(SecurityIdentifier)))
+            if (rule.AccessControlType == AccessControlType.Allow && (rule.FileSystemRights & write) != 0 && !admins.Equals(rule.IdentityReference) && !system.Equals(rule.IdentityReference))
+                throw new InvalidDataException("恢复资料允许普通用户写入，不能据此确认安装状态。");
     }
     private static void ProtectStateDirectory()
     {
@@ -123,6 +188,8 @@ public static class BootLogoInstaller
     }
     private static async Task<BootLogoResponse> InstallAsync(BootLogoRequest request, BootLogoEnvironment env)
     {
+        var previous = ReadJournal();
+        if (previous != null && previous.Phase != "Restored") throw new InvalidOperationException("已有 Logo 安装或未完成的恢复记录，请先恢复原 Logo；不要重复安装。");
         byte[] bmp;
         using (var input = new FileStream(request.ImageFile, FileMode.Open, FileAccess.Read, FileShare.Read))
         {
@@ -136,8 +203,6 @@ public static class BootLogoInstaller
         string esp = env.EspVolume;
         string windows = Path.Combine(esp, @"EFI\Microsoft\Boot\bootmgfw.efi");
         string logo = Path.Combine(esp, @"EFI\HackBGRT");
-        var previous = ReadJournal();
-        if (previous != null && previous.Phase != "Restored") throw new InvalidOperationException("已有 Logo 安装或未完成的恢复记录，请先恢复原 Logo。");
         if (Directory.Exists(logo))
         {
             if (previous == null || previous.EspVolume != esp || previous.InstalledFiles.Count != ExpectedFiles.Length)
@@ -163,7 +228,7 @@ public static class BootLogoInstaller
             VerifyOfficialFiles(logo, stage, bmp);
             return ExpectedFiles.ToDictionary(name => name, name => BootLogoPackage.HashFile(Path.Combine(logo, name)), StringComparer.OrdinalIgnoreCase);
         }, () => CheckWindows(windows, windowsHash));
-        return new BootLogoResponse { Success = true, Environment = env, RecoveryDirectory = session,
+        return new BootLogoResponse { Success = true, AlreadyInstalled = true, Environment = env, RecoveryDirectory = session,
             Message = "安装并读回核验完成。Windows Boot Manager 仍是默认；请从固件启动菜单单次选择 HackBGRT 试启动。恢复记录：" + session };
     }
     private static BootLogoResponse Restore(BootLogoEnvironment env)

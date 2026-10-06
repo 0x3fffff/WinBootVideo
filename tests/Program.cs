@@ -16,6 +16,13 @@ string work = Path.Combine(Path.GetTempPath(), "WinBootVideo-checks-" + Guid.New
 Directory.CreateDirectory(work);
 try
 {
+    if (args.Length is 1 or 2 && args[0] == "--installed-logo-only")
+    {
+        BootLogoChecks.RunInstalledProbe(Check);
+        if (args.Length == 2) await BootLogoChecks.RunGui(Check, work, args[1]);
+        Console.WriteLine($"{checks} installed logo checks passed. Fake firmware only; no real EFI writes.");
+        return;
+    }
     if (args.Length == 2 && args[0] == "--official-esp-only")
     {
         await OfficialEspChecks.Run(args[1], work, Check);
@@ -34,18 +41,19 @@ try
         Console.WriteLine($"{checks} Insyde entry checks passed. Exact captured structures, fake firmware only.");
         return;
     }
-    if (args.Length >= 1 && args.Length <= 3 && args[0] == "--boot-logo-only")
+    if (args.Length >= 1 && args.Length <= 4 && args[0] == "--boot-logo-only")
     {
         BootLogoChecks.RunSafety(Check);
         BootLogoChecks.RunInsydeEntries(Check);
+        BootLogoChecks.RunInstalledProbe(Check);
         await BootLogoChecks.RunTransaction(Check);
-        await BootLogoChecks.RunGui(Check, work);
+        await BootLogoChecks.RunGui(Check, work, args.Length == 4 ? args[3] : null);
         if (args.Length >= 2)
         {
             await BootLogoChecks.RunOfficialCopy(args[1], Check, work);
             await OfficialEspChecks.Run(args[1], work, Check);
         }
-        if (args.Length == 3) await BootLogoChecks.RunHelper(args[2], Check, work);
+        if (args.Length >= 3) await BootLogoChecks.RunHelper(args[2], Check, work);
         Console.WriteLine($"{checks} boot logo checks passed. Fake firmware, isolated package directories, no real EFI/BCD writes.");
         return;
     }

@@ -18,15 +18,19 @@ public partial class BootLogoWindow : Window
     private readonly AppPaths paths;
     private readonly Func<BootLogoRequest, Task<BootLogoResponse>> execute;
     private readonly Func<string, bool> confirm;
+    private readonly Func<BootLogoJournal?> readJournal;
     private byte[]? image;
     private string source = "", prepared = "";
     private BootLogoEnvironment? environment;
     private bool probePassed;
+    private bool alreadyInstalled;
     private bool busy;
-    public BootLogoWindow(AppPaths paths, Func<BootLogoRequest, Task<BootLogoResponse>>? executor = null, Func<string, bool>? confirmation = null)
+    public BootLogoWindow(AppPaths paths, Func<BootLogoRequest, Task<BootLogoResponse>>? executor = null, Func<string, bool>? confirmation = null,
+        Func<BootLogoJournal?>? journalReader = null)
     {
         InitializeComponent(); this.paths = paths; execute = executor ?? RunElevated;
         confirm = confirmation ?? (text => MessageBox.Show(this, text, "开机 Logo · 确认操作", MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK);
+        readJournal = journalReader ?? BootLogoInstaller.ReadJournal;
         Refresh(); Closing += (_, e) => { if (busy) { e.Cancel = true; LogoStatus.Text = "请等待操作完成。安装或恢复进行中不能关闭窗口。"; } };
     }
     private void Refresh()
@@ -38,15 +42,17 @@ public partial class BootLogoWindow : Window
         RescueCheck.IsEnabled = TrialCheck.IsEnabled = ShimCheck.IsEnabled = !busy;
         var missing = InstallationRequirements();
         InstallLogoButton.IsEnabled = !busy && missing.Count == 0;
-        InstallHint.Text = busy ? "正在执行操作，请等待完成。" : missing.Count == 0 ? "准备完成，可以安装。安装后先单次试启动，Windows Boot Manager 仍是默认。" :
+        InstallHint.Text = busy ? "正在执行操作，请等待完成。" : alreadyInstalled ?
+            "Logo 已安装，无需重复安装。请按操作详情验证启动；如需更换图片，先恢复原 Logo 后重新安装。" : missing.Count == 0 ? "准备完成，可以安装。安装后先单次试启动，Windows Boot Manager 仍是默认。" :
             "暂不能安装：" + string.Join("；", missing);
         InstallLogoButton.ToolTip = InstallHint.Text;
-        try { RestoreLogoButton.IsEnabled = !busy && BootLogoInstaller.ReadJournal() is { Phase: not "Restored" }; }
+        try { RestoreLogoButton.IsEnabled = !busy && readJournal() is { Phase: not "Restored" }; }
         catch { RestoreLogoButton.IsEnabled = false; }
     }
     private List<string> InstallationRequirements()
     {
         var missing = new List<string>();
+        if (alreadyInstalled) { missing.Add("Logo 已安装，无需重复安装；如需更换图片，先恢复原 Logo"); return missing; }
         if (image == null) missing.Add("选择图片并完成转换");
         if (prepared.Length == 0) missing.Add("导出准备包，保留恢复说明");
         if (environment == null) missing.Add("完成管理员只读检查");
@@ -105,12 +111,12 @@ public partial class BootLogoWindow : Window
     }
     private async void ProbeClick(object sender, RoutedEventArgs e) => await Work(async () =>
     {
-        environment = null; probePassed = false;
+        environment = null; probePassed = false; alreadyInstalled = false;
         HardwareText.Text = "正在进行管理员只读检查…"; Refresh();
         BootLogoResponse response;
         try { response = await execute(new BootLogoRequest()); }
         catch { HardwareText.Text = "只读检查未完成；尚不能确认安装条件，请重新检查。"; throw; }
-        environment = response.Environment; probePassed = response.Success;
+        environment = response.Environment; probePassed = response.Success; alreadyInstalled = response.Success && response.AlreadyInstalled;
         HardwareText.Text = environment == null ? response.Message :
             environment.Model + "\nUEFI x64：" + (environment.Uefi && environment.X64 ? "是" : "否 / 未知") +
             " · 固件：" + (environment.FirmwareManufacturer.Length == 0 ? "未知" : environment.FirmwareManufacturer) +
@@ -132,13 +138,13 @@ public partial class BootLogoWindow : Window
         {
             var result = await execute(new BootLogoRequest { Action = "install", ImageFile = Path.Combine(prepared, "splash.bmp"), ImageHash = BootLogoPackage.Hash(image),
                 RescueReady = RescueCheck.IsChecked == true, ManualTrialAccepted = TrialCheck.IsChecked == true, ShimUnderstood = ShimCheck.IsChecked == true });
-            LogoStatus.Text = result.Message; environment = null;
+            LogoStatus.Text = result.Message; environment = null; probePassed = false; alreadyInstalled = result.Success;
         });
     }
     private async void RestoreClick(object sender, RoutedEventArgs e)
     {
         if (!confirm("将只移除本软件记录的 Logo 启动项，保留 Windows 启动器和 EFI Logo 文件。继续恢复？")) return;
-        await Work(async () => { var result = await execute(new BootLogoRequest { Action = "restore" }); LogoStatus.Text = result.Message; environment = null; });
+        await Work(async () => { var result = await execute(new BootLogoRequest { Action = "restore" }); LogoStatus.Text = result.Message; environment = null; probePassed = false; alreadyInstalled = false; });
     }
     private async Task Work(Func<Task> action)
     {

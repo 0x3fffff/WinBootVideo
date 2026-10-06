@@ -249,6 +249,41 @@ public sealed class BootLogoRegistration
         var plan = new Plan(free.Value, order[0], original, windows, new FirmwareValue(7, logo), preserved);
         ValidatePlan(plan); return plan;
     }
+    // Read-only verification of our recorded installation. Never broadens first-install rules.
+    public string VerifyInstalled(Plan plan, Guid partition)
+    {
+        ValidatePlan(plan);
+        if (plan.Number > 255 || BootLogoEntry.Parse(plan.WindowsEntry.Data).Partition != partition)
+            throw new InvalidDataException("Logo 恢复记录与当前 EFI 分区不一致。");
+        AssertWindows(plan);
+        AssertPreserved(plan);
+        if (!Equal(firmware.Read(Name(plan.Number)), plan.NewEntry))
+            throw new InvalidDataException("本软件的 Logo 启动项缺失或已变化；请查看恢复记录，不要重复安装。");
+        var rawOrder = firmware.Read("BootOrder");
+        var order = Order(rawOrder);
+        var preserved = plan.PreservedEntries ?? new Dictionary<ushort, FirmwareValue>();
+        if (rawOrder!.Attributes != 7 || !order.Contains(plan.Number) || !order.Contains(plan.WindowsNumber) ||
+            order.Any(id => id != plan.Number && id != plan.WindowsNumber && !preserved.ContainsKey(id)) ||
+            (order[0] != plan.Number && order[0] != plan.WindowsNumber))
+            throw new InvalidDataException("当前启动顺序与已记录的 Logo / Windows 项不一致，停止安装；请查看启动项详情。");
+        var current = firmware.Read("BootCurrent");
+        if (current?.Data.Length != 2 || (BitConverter.ToUInt16(current.Data) != plan.WindowsNumber && BitConverter.ToUInt16(current.Data) != plan.Number))
+            throw new InvalidDataException("本次启动不是已记录的 Windows / Logo 项，不能确认安装状态。");
+        var next = firmware.Read("BootNext");
+        if (next != null && (next.Data.Length != 2 || (BitConverter.ToUInt16(next.Data) != plan.Number && BitConverter.ToUInt16(next.Data) != plan.WindowsNumber)))
+            throw new InvalidDataException("存在其他单次启动设置，请先完成它再检查。");
+        foreach (ushort id in Enumerable.Range(0, 256).Select(i => (ushort)i).Concat(new ushort[] { 0x2001, 0x2002, 0x2003 }))
+        {
+            if (id == plan.Number || id == plan.WindowsNumber) continue;
+            var value = firmware.Read(Name(id));
+            if (preserved.TryGetValue(id, out var expected) && Equal(value, expected)) continue;
+            if (value != null) throw new InvalidDataException("检测到恢复记录之外的固件项 " + Name(id) + "，停止安装；不要删除它绕过检查。");
+        }
+        return "已安装并核验本软件的 " + Name(plan.Number) + "（启动项完整字节及文件校验通过）。" +
+            (order[0] == plan.Number ? "HackBGRT 当前为默认启动项；无需重复安装。" :
+            "Windows Boot Manager 仍是默认；请从固件启动菜单单次选择 HackBGRT 试启动，验证成功后再手动设为默认。") +
+            "如需更换图片，请先恢复原 Logo 后重新安装。";
+    }
     public void Apply(Plan plan)
     {
         ValidatePlan(plan);
