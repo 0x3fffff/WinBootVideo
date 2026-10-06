@@ -16,6 +16,12 @@ string work = Path.Combine(Path.GetTempPath(), "WinBootVideo-checks-" + Guid.New
 Directory.CreateDirectory(work);
 try
 {
+    if (args.Length == 2 && args[0] == "--official-esp-only")
+    {
+        await OfficialEspChecks.Run(args[1], work, Check);
+        Console.WriteLine($"{checks} official ESP checks passed. Ordinary temporary files; no EFI writes.");
+        return;
+    }
     if (args.Length == 1 && args[0] == "--login-wait-only")
     {
         LoginWaitChecks.Run(Check);
@@ -34,7 +40,11 @@ try
         BootLogoChecks.RunInsydeEntries(Check);
         await BootLogoChecks.RunTransaction(Check);
         await BootLogoChecks.RunGui(Check, work);
-        if (args.Length >= 2) await BootLogoChecks.RunOfficialCopy(args[1], Check, work);
+        if (args.Length >= 2)
+        {
+            await BootLogoChecks.RunOfficialCopy(args[1], Check, work);
+            await OfficialEspChecks.Run(args[1], work, Check);
+        }
         if (args.Length == 3) await BootLogoChecks.RunHelper(args[2], Check, work);
         Console.WriteLine($"{checks} boot logo checks passed. Fake firmware, isolated package directories, no real EFI/BCD writes.");
         return;

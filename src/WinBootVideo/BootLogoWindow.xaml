@@ -35,6 +35,7 @@
           </StackPanel></Border>
           <Border Style="{StaticResource Card}" Margin="0,14,0,0"><StackPanel>
             <TextBlock Text="03  准备与确认" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12"/>
+            <TextBlock Text="安装前：保持现有 UEFI / Secure Boot / TPM 设置；准备恢复 U 盘、帐户密码及另一设备上的恢复说明。软件负责定位 EFI，无需手动分配盘符或格式化分区。首次 shim 确认与默认启动顺序调整在安装后试启动时完成。" Style="{StaticResource Small}" Margin="0,0,0,12"/>
             <TextBlock Text="先导出图片、配置、官方工具和恢复说明到独立文件夹。导出可在不符合安装条件的电脑上使用；导出不会更改启动设置。" Style="{StaticResource Small}"/>
             <Button x:Name="ExportButton" Content="导出准备包…" Click="ExportClick" HorizontalAlignment="Left" Margin="0,12,0,10" IsEnabled="False"/>
             <CheckBox x:Name="RescueCheck" Checked="ConfirmationChanged" Unchecked="ConfirmationChanged"><TextBlock Text="已准备可启动的恢复 U 盘，确认帐户密码可用，恢复说明已保存到另一设备" TextWrapping="Wrap"/></CheckBox>

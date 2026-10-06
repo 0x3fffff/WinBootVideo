@@ -17,6 +17,9 @@ HackBGRT 在运行时更新 BGRT 并继续引导 Windows，不能消除它启动
 允许规则限于已验证厂商、固定编号 / 名称、变量属性 7 及完整数据相同；没有实际磁盘 / EFI 文件目标。真实文件启动项、数据不符或其他厂商仍停止。原始入口保存为快照并在写前及读回后检查，安装 / 恢复不写这些项，保留它们的顺序与后来外部变更；仅追加 / 移除自己的 Logo。重放从红到绿，最终 432 项隔离回归通过，没有将此结果等同于真实 UEFI 启动安全验证。
 
 ## 调用边界
+2026-10-07 补充：用户实际安装在 `InitEspPath → Esp.TryPath` 报 “The ESP path doesn't look like an EFI System Partition.”；0.2.2 的文件复制夹具直接设置 InstallPath，遗漏了路径初始化。对同一普通临时 EFI 目录，.NET 8 可访问卷 GUID 别名，官方旧 Framework 默认配置则返回不存在。0.2.3 在准备包和管理员专用安装暂存目录写入固定 `setup.exe.config`，以 `Switch.System.IO.UseLegacyPathHandling=false;Switch.System.IO.BlockLongPaths=false` 启用程序本地兼容处理；安装前验证配置未被改变。不改官方二进制、不改系统注册表、不挂载分区或分配盘符。[微软路径规范化说明](https://learn.microsoft.com/en-us/dotnet/framework/migration-guide/mitigation-path-normalization)、[程序本地兼容开关](https://learn.microsoft.com/en-us/dotnet/framework/configure-apps/file-schema/runtime/appcontextswitchoverrides-element)。
+
+回归通过固定官方二进制反射调用实际 InitEspPath，再调用实际 InstallFiles。所有目标均为 GUID 唯一普通临时目录；只使用明确给定的目录，不调用安装主入口、挂载、固件或 BCD API。删除同一份配置会重现原始拒绝错误；恢复配置后真实复制六个文件并经生产校验。没有 EFI 子目录的路径仍拒绝，兼容配置不是放宽安装目标检查。
 
 原版 EnableBCDEdit 的若干 /set 命令没有检查失败返回；DisableBCDEdit 按输出是否含 HackBGRT 判断归属，无法满足本应用的准确凭据要求。因此不调用 enable-*、disable-*、uninstall、覆盖引导器或 allow-* 参数，只调用固定的 `batch is-elevated install arch=x64 esp=<已确认卷 GUID>` 文件安装。
 

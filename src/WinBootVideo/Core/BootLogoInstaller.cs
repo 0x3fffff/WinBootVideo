@@ -192,6 +192,8 @@ public static class BootLogoInstaller
     }
     private static async Task RunOfficialFileInstall(string stage, string esp)
     {
+        if (File.ReadAllText(Path.Combine(stage, "setup.exe.config")) != BootLogoPackage.InstallerRuntimeConfig)
+            throw new IOException("官方安装器的本地路径兼容配置被修改，停止安装。请使用完整的新版本软件重新准备安装。");
         var start = new ProcessStartInfo(Path.Combine(stage, "setup.exe")) { WorkingDirectory = stage,
             UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (string arg in FileInstallArguments(esp)) start.ArgumentList.Add(arg);
@@ -201,7 +203,12 @@ public static class BootLogoInstaller
         catch { if (!process.HasExited) process.Kill(true); throw; }
         string log = await output + "\n" + await error;
         File.WriteAllText(Path.Combine(stage, "WinBootVideo-installer-output.txt"), log);
-        if (process.ExitCode != 0) throw new IOException("官方文件安装失败（退出码 " + process.ExitCode + "），尚未启用 Logo。" + log);
+        if (process.ExitCode != 0)
+        {
+            string hint = log.Contains("The ESP path doesn't look like an EFI System Partition.", StringComparison.Ordinal)
+                ? "\n官方安装器无法访问已检查的 EFI 路径。请保留操作详情；这不表示需要关闭 Secure Boot、改 BIOS、格式化分区或手动分配盘符。\n" : "";
+            throw new IOException("官方文件安装失败（退出码 " + process.ExitCode + "），尚未启用 Logo。" + hint + log);
+        }
     }
     private static void CheckWindows(string path, string hash)
     {

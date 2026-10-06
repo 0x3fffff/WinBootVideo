@@ -13,6 +13,17 @@ public static class BootLogoPackage
     public const string Version = "2.6.0";
     public const string ArchiveHash = "6204911d777ac03e514b90126568ef6faa1d477779b31c536b142dba92f4a2c0";
     public const string Config = "boot=MS\nimage= x=.5 y=.382 path=splash.bmp\nresolution=-1x-1\nlog=1\ndebug=0\n";
+    // The pinned installer targets older Framework defaults. Opt in locally so
+    // its actual Esp.TryPath / file copy can access an already verified volume GUID.
+    // This changes only this executable's IO policy, never Windows / BIOS settings.
+    public const string InstallerRuntimeConfig = """
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <runtime>
+    <AppContextSwitchOverrides value="Switch.System.IO.UseLegacyPathHandling=false;Switch.System.IO.BlockLongPaths=false" />
+  </runtime>
+</configuration>
+""";
     public const string ReleaseUrl = "https://github.com/Metabolix/HackBGRT/releases/tag/v2.6.0";
     public static byte[] Archive()
     {
@@ -51,6 +62,7 @@ public static class BootLogoPackage
         }
         File.WriteAllBytes(Path.Combine(newDirectory, "splash.bmp"), bmp);
         File.WriteAllText(Path.Combine(newDirectory, "config.txt"), Config, new UTF8Encoding(false));
+        File.WriteAllText(Path.Combine(newDirectory, "setup.exe.config"), InstallerRuntimeConfig, new UTF8Encoding(false));
         File.WriteAllText(Path.Combine(newDirectory, "WinBootVideo-恢复与首次启动.txt"), Guide, new UTF8Encoding(false));
         return newDirectory;
     }
@@ -69,6 +81,13 @@ WinBootVideo 开机 Logo · HackBGRT 2.6.0
 改变的是 UEFI 启动 Windows 时的静态 BGRT Logo。主板通电后最早的厂商 Logo 可能仍短暂出现。它与登录后视频是两个独立功能。
 Windows 加载阶段即使显示的是七彩虹等厂商 Logo，也可以由 HackBGRT 替换。刚按电源就出现的固件图片不属于本功能；本软件不刷写或修改 BIOS 来彻底替换第一张图片。
 软件不能保证所有固件兼容，更不能保证启动风险为零。请先准备 Windows 恢复 U 盘，并确认知道如何打开主板启动菜单。
+
+安装前准备：
+1. 保持电脑现有 UEFI、Secure Boot、TPM、CSM 和 SATA 设置。本功能不要求预先关闭安全启动，也不要求手动挂载 EFI 分区或分配盘符。
+2. 准备可启动的 Windows 恢复 U 盘，确认帐户密码可用（不要只依赖 PIN），把这份说明保存到另一设备，查好电脑的启动菜单入口。
+3. 在软件中选图并导出准备包，通过管理员只读检查，再确认恢复和单次试启动步骤；加密、多 ESP 或未知配置继续阻止安装，不为改 Logo 关闭安全功能或解密磁盘。
+4. Secure Boot 开启时，阅读下方 shim 步骤；哈希信任只在安装后的首次试启动中手动确认。默认启动顺序也只在单次验证成功后再调整。
+5. 安装器的卷 GUID 路径兼容设置已随 setup.exe.config 提供，仅对这个程序生效，不修改 Windows 注册表或 BIOS。若出现 “The ESP path doesn't look like an EFI System Partition.”，保留操作详情并使用新版本重新检查；不要格式化分区、关闭 Secure Boot 或手动分配盘符来绕过。
 
 本软件仅支持当前已为 UEFI x64、单 Windows 启动项、单 EFI 系统分区且系统盘完全未加密的环境。加密或未知状态阻止安装。不要为这个功能解密系统盘、清空 TPM 或删除现有启动项。
 EFI 分区可用空间须至少 20 MB；空间不足或未知时停止，不删除不明文件腾空间。
@@ -92,7 +111,7 @@ BIOS / UEFI 引导：
 图片：
 选择本地静态 PNG / JPEG / BMP，最多 16 MB、2000 万像素、每边最多 8192。软件保留比例缩放，透明区域铺黑，生成正向高度、24 位未压缩、54 字节头的 BMP3。
 建议 320×180 或 256×256 画布，黑色背景、图案居中。最大 600×360。UEFI 分辨率可能低于桌面；桌面预览仅为示意，保留当前固件分辨率，不强制切换显示模式。
-准备包中的 splash.bmp 和 config.txt 是独立副本。删除原始图片不影响它们；安装后图片还会复制到 EFI 分区。不要删除正在准备的安装包或恢复记录。
+准备包中的 splash.bmp、config.txt、setup.exe.config 和恢复说明是独立副本。删除原始图片不影响它们；安装后图片还会复制到 EFI 分区。不要删除正在准备的安装包或恢复记录。安装成功且试启动验证后，可删除导出的准备包；保留 ProgramData 中的恢复记录和另存的恢复说明。
 
 恢复：
 若试启动失败或卡住，用固件启动菜单选择 Windows Boot Manager。进 Windows 后打开本软件的“恢复原 Logo”。

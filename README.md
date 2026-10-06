@@ -1,12 +1,20 @@
-# WinBootVideo 0.2.2
+# WinBootVideo 0.2.3
 
 Windows 11 的**登录后动画**工具。完成密码 / PIN / 图片密码验证、登录画面退场后，显示全屏视频，再淡出到桌面。0.1.6 采用桌面前模式：视频呈现后才允许本宿主启动 Explorer，覆盖层保持到动画淡出；不使用桌面出现后再播放的备用入口。每次登录播放一次，锁屏解锁不重复；注销后重新登录会再播放。
 
 这一版用 C# / WPF 编写，提供中文浅色 GUI，可选视频、检查、转码、预览、启用和恢复。初次运行不会更改登录配置。新增独立的“开机 Logo”向导，使用固定版本 HackBGRT 更换 UEFI 启动 Windows 时的静态 BGRT 图片；不刷主板固件，不替换 Windows 转圈动画或锁屏画面。
 
-## 开机 Logo（0.2.2）
+## 开机 Logo（0.2.3）
 
 在左侧点击“开机 Logo”，按“选图 → 导出准备包 → 管理员只读检查 → 恢复确认 → 安装”操作。登录视频与开机 Logo 的启用和恢复分别管理。普通界面和登录播放器继续使用普通权限；Logo 的检查、安装和恢复在单独辅助进程中申请 UAC。
+
+### 安装前需要准备什么
+
+保持电脑现有 UEFI、Secure Boot、TPM、CSM 和 SATA 设置，**不需要先关闭安全启动、手动挂载 EFI 或分配盘符**。准备可启动的 Windows 恢复 U 盘、可用的帐户密码（不要只依赖 PIN）、另一设备上的恢复说明，并查好电脑官方的启动菜单入口。软件负责检查当前分区及启动项；若加密、多 EFI 分区或未知状态不支持安装，请停止，不为改 Logo 解密磁盘或关闭安全功能。
+
+Secure Boot 开启时，首次 shim 哈希确认在安装后的单次试启动中进行；默认启动顺序只在 Logo 和 Windows 登录均验证成功后再手动调整。完整步骤见下文。
+
+0.2.3 修复官方安装器误报 `The ESP path doesn't look like an EFI System Partition.`：旧版 .NET 默认路径规则拒绝合法卷 GUID 路径，现在由软件提供安装器专用 `setup.exe.config` 启用兼容处理。仅改变该程序的文件路径处理，不修改系统注册表或 BIOS。已失败的安装请保留恢复记录，用新版本重新导出准备包、只读检查后再安装；若仍有错误，保存“操作详情”，不要格式化分区、删除启动项或关闭 Secure Boot 绕过。[微软路径兼容说明](https://learn.microsoft.com/en-us/dotnet/framework/migration-guide/mitigation-path-normalization)
 
 初版仅支持已经处于 UEFI x64、系统盘完全未加密、一个 EFI 系统分区且与 Windows 位于同一磁盘的环境；只有当前默认的单 Windows 启动项，不存在另一个系统、旧 HackBGRT 或不明额外项，也没有待执行的 BootNext。允许经完整字节与厂商核验的 Insyde 通用设备入口 `Boot2001`（USB）、`Boot2002`（光驱）、`Boot2003`（网络），安装和恢复均保留这些项。未知、加密（即使保护已暂停）、多分区或无法核实的配置仍阻止安装。**不要为了绕过检查解密磁盘、删除其他启动项或关闭安全功能。**
 
@@ -187,7 +195,7 @@ New-Item -ItemType Directory -Path .\artifacts\screenshots -Force
 .\artifacts\WinBootVideo\WinBootVideo.exe --render-ui "E:\Project\WinBootVideo\artifacts\screenshots\gui-preview.png" --data-dir "E:\Project\WinBootVideo\.runtime\ui-check"
 ```
 
-独立诊断入口 `dotnet run --project tests/WinBootVideo.Checks.csproj -c Release -- --login-wait-only` 重放已观察到的十五分钟登录桌面等待超时，使用虚拟时钟、不更改系统。当前 0.2.2 预期失败，表示问题尚未修复；它不属于正常构建和验证的通过检查。日志不能单独确认用户认证时刻，后续二十分钟登录转换是合成测试情形。
+独立诊断入口 `dotnet run --project tests/WinBootVideo.Checks.csproj -c Release -- --login-wait-only` 重放已观察到的十五分钟登录桌面等待超时，使用虚拟时钟、不更改系统。当前版本仍预期失败，表示问题尚未修复；它不属于正常构建和验证的通过检查。日志不能单独确认用户认证时刻，后续二十分钟登录转换是合成测试情形。
 
 当前版包含登录视频和 UEFI 静态 Logo 向导，不包含自动更新、通电阶段的视频动画、时间轴编辑、主题素材库或多用户管理员部署。
 

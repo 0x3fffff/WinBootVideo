@@ -2,6 +2,13 @@
 
 验证日期：2026-10-05。环境：Windows 11 Home China / 25H2（26200.9168），x64 .NET 8 SDK 8.0.422 / WindowsDesktop 8.0.28。自动播放验证全部使用 `--preview`，没有注销、重启或切换用户输入桌面。真实安装和登录配置的变更另行记录，不属于模拟注册表验证。
 
+## 0.2.3 官方安装器卷 GUID 路径兼容（2026-10-07）
+
+用户实际安装失败于官方 `InitEspPath → Esp.TryPath`，提示 “The ESP path doesn't look like an EFI System Partition.”。只读恢复记录为 Restored、InstalledFiles 为空，保存原始错误和恢复资料；这不是安装成功记录。此前直接调用 InstallFiles 的夹具没有覆盖初始化路径。
+
+反馈入口：`dotnet run --project tests/WinBootVideo.Checks.csproj -c Release --no-restore -- --official-esp-only artifacts/fixtures/OfficialLogoFiles.exe`。同一个普通临时 EFI 目录用普通路径通过、卷 GUID 路径失败，捕获与用户完全相同的错误；原始红日志为 `artifacts/logs/official-esp-red.txt`。为官方安装器加入固定的程序本地路径兼容配置后，官方实际 InitEspPath 与 InstallFiles 均可使用卷 GUID 别名；移除配置再次失败，无 EFI 目录仍拒绝。配置只对安装器生效，不改 Windows 注册表，不挂载 ESP，不修改 BIOS / Secure Boot / TPM。
+
+最终 `--boot-logo-only artifacts/fixtures/OfficialLogoFiles.exe src/WinBootVideo/bin/Release/net8.0-windows` 通过 **440 项隔离检查**，含新增 8 项真实官方路径 / 文件复制检查与原有模拟固件保护、GUI、失败撤销和普通权限辅助 CLI 拒绝检查。快速逻辑检查 **125 项通过**。日志为 `artifacts/logs/boot-logo-checks.txt`、`artifacts/logs/logic-checks.txt`。安装前说明已同步到 GUI、README 和导出的恢复说明；界面已渲染并检查，截图为 `artifacts/screenshots/logo-ui.png`。没有执行真实 Logo 安装、固件写入或重启；真实 EFI 安装和首次启动仍需用户验证。登录动画十五分钟等待问题未在此次修改。
 ## 构建输出整理与待修诊断（2026-10-06）
 
 开发输出统一为 `artifacts/WinBootVideo`；普通构建不生成 ZIP，显式 `build.ps1 -Package` 才更新 `artifacts/WinBootVideo.zip`。旧版开发包目录和 ZIP 已清理，验证日志迁入 `artifacts/logs`、截图迁入 `artifacts/screenshots`、夹具迁入 `artifacts/fixtures`。下文版本目录名称是当时执行记录，不能据此继续使用旧 `-OutputDirectory` 参数。

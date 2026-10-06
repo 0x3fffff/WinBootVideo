@@ -65,7 +65,7 @@ public partial class App : Application
                 if (!startup.HasOwnedStartup(sid)) throw new InvalidOperationException("此命令仅修复已有登录动画；首次启用请使用 GUI。");
                 startup.EnableStrict(sid);
                 string? report = Arguments.Value(e.Args, "--startup-report");
-                if (report != null) AtomicJson.Write(report, new { version = "0.2.2", enabled = startup.IsStrictEnabled(sid), strictBeforeDesktop = true });
+                if (report != null) AtomicJson.Write(report, new { version = "0.2.3", enabled = startup.IsStrictEnabled(sid), strictBeforeDesktop = true });
                 Shutdown(startup.IsStrictEnabled(sid) ? 0 : 30);
                 return;
             }
