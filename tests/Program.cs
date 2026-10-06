@@ -16,6 +16,12 @@ string work = Path.Combine(Path.GetTempPath(), "WinBootVideo-checks-" + Guid.New
 Directory.CreateDirectory(work);
 try
 {
+    if (args.Length == 1 && args[0] == "--login-wait-only")
+    {
+        LoginWaitChecks.Run(Check);
+        Console.WriteLine($"{checks} login wait checks passed. Observed trace, virtual clock; no system changes.");
+        return;
+    }
     if (args.Length == 1 && args[0] == "--insyde-entries-only")
     {
         BootLogoChecks.RunInsydeEntries(Check);

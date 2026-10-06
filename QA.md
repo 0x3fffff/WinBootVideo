@@ -2,6 +2,12 @@
 
 验证日期：2026-10-05。环境：Windows 11 Home China / 25H2（26200.9168），x64 .NET 8 SDK 8.0.422 / WindowsDesktop 8.0.28。自动播放验证全部使用 `--preview`，没有注销、重启或切换用户输入桌面。真实安装和登录配置的变更另行记录，不属于模拟注册表验证。
 
+## 构建输出整理与待修诊断（2026-10-06）
+
+开发输出统一为 `artifacts/WinBootVideo`；普通构建不生成 ZIP，显式 `build.ps1 -Package` 才更新 `artifacts/WinBootVideo.zip`。旧版开发包目录和 ZIP 已清理，验证日志迁入 `artifacts/logs`、截图迁入 `artifacts/screenshots`、夹具迁入 `artifacts/fixtures`。下文版本目录名称是当时执行记录，不能据此继续使用旧 `-OutputDirectory` 参数。
+
+新增独立 `--login-wait-only` 诊断重放：实际日志为 13:15:56 宿主启动、桌面尚非输入桌面，13:15:57 遮罩就绪，13:30:56 十五分钟超时后取消动画。旧策略在虚拟时钟下稳定失败；日志 `artifacts/logs/login-wait-red-0.2.2.txt`。这确认了超时路径，不确认用户何时输入密码，也不证明 Windows 为什么一直未切换桌面。二十分钟后进入输入桌面的后续场景为合成测试。此次整理没有修改播放器、登录策略或固件安装逻辑，故此诊断仍预期失败，并与正常通过检查分开。
+
 ## 0.2.2 Insyde 通用设备入口误拦截（2026-10-06）
 
 用户完成 0.2.1 只读检查后报告 `Boot2001: EFI USB Device`。最新报告的 BootOrder 为 Windows → Boot2001 → Boot2002 → Boot2003，当前 Windows 为默认；只读 CIM 确认 BIOS 厂商 `INSYDE Corp.`。重建三个完整 EFI_LOAD_OPTION 后，SHA-256 分别与报告完全一致；数据为活动属性 1、设备路径长度 4、仅结束节点、固定 `RC` 参数，没有实际磁盘或 EFI 文件路径。UEFI 官网发布的 Insyde 2013 演示第 17 页也记录了此通用 USB / 光驱 / 网络格式。

@@ -1,6 +1,23 @@
-param([switch]$Test, [string]$OutputDirectory)
+param([switch]$Test, [switch]$Package)
 $ErrorActionPreference = 'Stop'
 $taskRoot = $PSScriptRoot
+$output = Join-Path $taskRoot 'artifacts\WinBootVideo'
+# Always update the same application directory. Never overwrite a running copy.
+foreach ($path in @((Join-Path $taskRoot 'artifacts'), $output)) {
+    if ((Test-Path -LiteralPath $path) -and ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw "构建输出不允许为链接或联接：$path"
+    }
+}
+if (Test-Path -LiteralPath $output) {
+    if (Get-ChildItem -LiteralPath $output -Recurse -Force -Attributes ReparsePoint) { throw '构建输出含链接，停止覆盖。' }
+}
+foreach ($process in @(Get-Process -Name 'WinBootVideo', 'WinBootVideo.Host' -ErrorAction SilentlyContinue)) {
+    $processPath = $process.Path
+    if (!$processPath) { throw '无法确认运行中的 WinBootVideo 位置，请关闭后再构建。' }
+    if ($processPath.StartsWith($output + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+        throw '请先关闭 artifacts\WinBootVideo 中运行的程序再构建。'
+    }
+}
 $sdk = Join-Path $env:ProgramFiles 'dotnet\dotnet.exe'
 if (!(Test-Path -LiteralPath $sdk)) { throw '需要安装 x64 .NET 8 SDK。' }
 $env:DOTNET_CLI_HOME = Join-Path $taskRoot '.cli'
@@ -12,7 +29,6 @@ $previousLocalAppData = $env:LOCALAPPDATA
 $env:LOCALAPPDATA = Join-Path $taskRoot '.runtime\build-local'
 New-Item -ItemType Directory -Path $env:LOCALAPPDATA -Force | Out-Null
 try {
-$output = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory, $taskRoot) } else { Join-Path $taskRoot 'artifacts\WinBootVideo' }
 & $sdk restore (Join-Path $taskRoot 'src\WinBootVideo\WinBootVideo.csproj') --configfile (Join-Path $taskRoot 'NuGet.Config')
 if ($LASTEXITCODE -ne 0) { throw '离线还原失败。' }
 & $sdk publish (Join-Path $taskRoot 'src\WinBootVideo\WinBootVideo.csproj') -c Release -o $output --self-contained false --no-restore
@@ -40,5 +56,13 @@ if ($Test) {
     if ($LASTEXITCODE -ne 0) { throw '验证项目还原失败。' }
     & $sdk run --project (Join-Path $taskRoot 'tests\WinBootVideo.Checks.csproj') -c Release --no-restore
     if ($LASTEXITCODE -ne 0) { throw '验证失败。' }
+}
+if ($Package) {
+    $archive = Join-Path $taskRoot 'artifacts\WinBootVideo.zip'
+    if ((Test-Path -LiteralPath $archive) -and ((Get-Item -LiteralPath $archive -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw '打包文件不允许为链接。'
+    }
+    Compress-Archive -Path (Join-Path $output '*') -DestinationPath $archive -Force
+    Write-Host "压缩包已更新：$archive"
 }
 } finally { $env:LOCALAPPDATA = $previousLocalAppData }

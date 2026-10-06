@@ -153,9 +153,29 @@ Windows 11 Home / Pro 的个人桌面采用这一用户级方案；企业策略�
 构建需要 x64 .NET 8 SDK（`global.json` 指定 8.0.422）、内置 Framework C# 编译器；无第三方 NuGet 包，仓库禁用了包源：
 
 ```powershell
+./build.ps1
 ./build.ps1 -Test
 ./verify.ps1 -FFmpegDirectory "E:\项目\ffmpeg\bin"
+# 仅需分发 ZIP 时执行；仍然使用固定文件名，不创建版本文件夹。
+./build.ps1 -Package
 ```
+
+构建和验证统一更新 `artifacts\WinBootVideo`，不再接受 `-OutputDirectory`，不生成 `WinBootVideo-版本号` 文件夹。构建前请关闭这个目录中运行的程序；脚本会检查并停止覆盖运行中的副本。普通构建不生成 ZIP，显式加 `-Package` 才更新 `artifacts\WinBootVideo.zip`。版本通过 Git 和程序版本信息管理。
+
+项目目录：
+
+| 目录 | 用途 |
+| --- | --- |
+| `src/WinBootVideo`、`src/Host`、`src/Shared` | GUI / 播放器、登录宿主、共享代码 |
+| `tests` | 自动检查与夹具源码 |
+| `assets` | 内置示例视频、固定版本 HackBGRT 和许可 |
+| `research` | 技术调研与设计记录 |
+| `artifacts/WinBootVideo` | 唯一的最新可运行程序目录 |
+| `artifacts/logs`、`artifacts/screenshots` | 本地验证日志和截图 |
+| `artifacts/fixtures`、`artifacts/test-media` | 编译后的测试夹具和测试素材 |
+| `.runtime`、`.cli` | 本地操作与 SDK 缓存 |
+
+生成目录不提交 Git。已安装的个人应用与恢复记录位于 AppData / ProgramData，和这些开发输出分别保存；清理旧开发包不会卸载已安装应用。
 
 `build.ps1 -Test` 验证超时状态、首帧先于桌面请求、命令行转义、备份恢复、旧任务迁移和素材保存；注册表及配置事务通过模拟对象测试。`verify.ps1` 还进行真实转码、WPF 播放、首帧 IPC 与交接顺序、损坏文件、超时、卡死子进程、宿主死亡及播放器缺失验证。旧任务适配器回归用 GUID 唯一临时任务，关闭自动登录触发，手动运行独立窗口预览后只清理自己的任务；另验证真实旧备用命令不创建播放器。GUI 全屏播放在单屏或多屏均执行，专用副屏回归在少于两屏时明确跳过。自动测试不注册真实 Shell、不注销、不重启；播放器会短暂显示静音窗口或全屏视频。真实 Winlogon 的衔接仍须实际登录验证。
 
@@ -163,10 +183,13 @@ Windows 11 Home / Pro 的个人桌面采用这一用户级方案；企业策略�
 
 ```powershell
 .\artifacts\WinBootVideo\WinBootVideo.exe --data-dir "E:\Project\WinBootVideo\.runtime\dev"
-.\artifacts\WinBootVideo\WinBootVideo.exe --render-ui "E:\Project\WinBootVideo\artifacts\gui-preview.png" --data-dir "E:\Project\WinBootVideo\.runtime\ui-check"
+New-Item -ItemType Directory -Path .\artifacts\screenshots -Force
+.\artifacts\WinBootVideo\WinBootVideo.exe --render-ui "E:\Project\WinBootVideo\artifacts\screenshots\gui-preview.png" --data-dir "E:\Project\WinBootVideo\.runtime\ui-check"
 ```
 
-源码结构：`src\WinBootVideo` 是 GUI / 播放器；`src\Host` 是独立宿主；`tests` 是逻辑与集成验证。当前版不包含自动更新、开机前动画、EFI Logo 替换、时间轴编辑、主题素材库或多用户管理员部署。
+独立诊断入口 `dotnet run --project tests/WinBootVideo.Checks.csproj -c Release -- --login-wait-only` 重放已观察到的十五分钟登录桌面等待超时，使用虚拟时钟、不更改系统。当前 0.2.2 预期失败，表示问题尚未修复；它不属于正常构建和验证的通过检查。日志不能单独确认用户认证时刻，后续二十分钟登录转换是合成测试情形。
+
+当前版包含登录视频和 UEFI 静态 Logo 向导，不包含自动更新、通电阶段的视频动画、时间轴编辑、主题素材库或多用户管理员部署。
 
 ## 开源参考与许可
 
@@ -174,6 +197,6 @@ Windows 11 Home / Pro 的个人桌面采用这一用户级方案；企业策略�
 
 - [DARLING-in-the-Windows](https://github.com/Rantkid/DARLING-in-the-Windows)：WPF 覆盖层、用户 Shell、Explorer 后台启动。它使用 PolyForm Noncommercial，不能将其视为可自由商用的 MIT 项目。
 - [AutoBloom](https://github.com/willnode/autobloom)：登录视频、首尾画面衔接等思路，具体源代码与许可见调研。
-- [HackBGRT](https://github.com/Metabolix/HackBGRT)：UEFI BGRT 静态 Logo，属于另一个阶段，不纳入此应用。
+- [HackBGRT](https://github.com/Metabolix/HackBGRT)：UEFI BGRT 静态 Logo，通过独立向导集成，内置官方 2.6.0 发布包并保留其许可。
 
 详细候选项目、许可证与差异见 [调研报告](research/windows-login-animation.md)。WPF 播放行为参考 [微软多媒体概览](https://learn.microsoft.com/en-us/dotnet/desktop/wpf/graphics-multimedia/multimedia-overview)，Shell 窗口判断参考 [GetShellWindow 官方文档](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getshellwindow)。
