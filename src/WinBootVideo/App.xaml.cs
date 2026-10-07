@@ -65,7 +65,7 @@ public partial class App : Application
                 if (!startup.HasOwnedStartup(sid)) throw new InvalidOperationException("此命令仅修复已有登录动画；首次启用请使用 GUI。");
                 startup.EnableStrict(sid);
                 string? report = Arguments.Value(e.Args, "--startup-report");
-                if (report != null) AtomicJson.Write(report, new { version = "0.2.6", enabled = startup.IsStrictEnabled(sid), strictBeforeDesktop = true });
+                if (report != null) AtomicJson.Write(report, new { version = AppVersion.Display, enabled = startup.IsStrictEnabled(sid), strictBeforeDesktop = true });
                 Shutdown(startup.IsStrictEnabled(sid) ? 0 : 30);
                 return;
             }
@@ -82,6 +82,7 @@ public partial class App : Application
             {
                 var logoWindow = new BootLogoWindow(paths);
                 if (Arguments.Value(e.Args, "--logo-image") is string logoImage) logoWindow.SelectImage(logoImage);
+                if (int.TryParse(Arguments.Value(e.Args, "--logo-step"), out int logoStep)) logoWindow.ShowStep(logoStep);
                 if (Arguments.Has(e.Args, "--logo-scroll-bottom")) ((System.Windows.Controls.ScrollViewer)logoWindow.FindName("LogoScroll")).ScrollToBottom();
                 RenderWindow(logoWindow, logoRender, 1000, 740); Shutdown(); return;
             }
@@ -92,17 +93,8 @@ public partial class App : Application
             string? renderPath = Arguments.Value(e.Args, "--render-ui");
             if (renderPath != null)
             {
-                var root = (FrameworkElement)window.Content;
-                root.Measure(new Size(1080, 780));
-                root.Arrange(new Rect(0, 0, 1080, 780));
-                root.UpdateLayout();
-                Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
-                var bitmap = new RenderTargetBitmap(1080, 780, 96, 96, PixelFormats.Pbgra32);
-                bitmap.Render(root);
-                var encoder = new PngBitmapEncoder();
-                encoder.Frames.Add(BitmapFrame.Create(bitmap));
-                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(renderPath))!);
-                using (var output = File.Create(renderPath)) encoder.Save(output);
+                if (int.TryParse(Arguments.Value(e.Args, "--login-step"), out int loginStep)) window.ShowLogin(loginStep);
+                RenderWindow(window, renderPath, 1080, 780);
                 Shutdown();
                 return;
             }

@@ -6,8 +6,13 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>0.2.6</Version>
+    <Version>0.3.0</Version>
+    <Authors>0x3fffff</Authors>
+    <Company>0x3fffff</Company>
+    <Product>WinBootVideo</Product>
+    <Description>Windows 11 开机 Logo 与登录动画工具</Description>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>../../assets/WinBootVideo.ico</ApplicationIcon>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
   </PropertyGroup>
@@ -16,4 +21,5 @@
   <ItemGroup><Compile Include="../Shared/StartupLimits.cs" Link="Core/StartupLimits.cs" /></ItemGroup>
   <ItemGroup><Compile Include="../Shared/LoginTaskSupport.cs" Link="Core/LoginTaskSupport.cs" /></ItemGroup>
   <ItemGroup><EmbeddedResource Include="../../assets/HackBGRT-2.6.0.zip" LogicalName="WinBootVideo.HackBGRT.zip" /></ItemGroup>
+  <ItemGroup><Resource Include="../../assets/WinBootVideo.ico" Link="Assets/App.ico" /></ItemGroup>
 </Project>

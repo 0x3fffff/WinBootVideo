@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Microsoft.Win32;
 using WinBootVideo.Core;
 using WinBootVideo.Shared;
@@ -28,6 +29,9 @@ public partial class MainWindow : Window
     private VideoInfo? videoInfo;
     private CancellationTokenSource? operation;
     private bool busy;
+    private int loginStep;
+    private bool loginVisible;
+    private bool startupEnabled;
     private string Sid => WindowsIdentity.GetCurrent().User?.Value ?? throw new InvalidOperationException("无法识别当前用户。");
     public MainWindow(AppPaths paths, IUserShellRegistry? registry = null, string? previewHost = null, bool previewWindowed = false, ILoginTaskStore? startupTasks = null)
     {
@@ -49,7 +53,8 @@ public partial class MainWindow : Window
         FadeText.Text = settings.FadeOutMilliseconds.ToString();
         MaximumText.Text = settings.MaxDurationSeconds.ToString();
         StartupText.Text = settings.StartupTimeoutSeconds.ToString();
-        RefreshFile(); RefreshTools(); RefreshStartup();
+        VersionText.Text = AppVersion.Display + " · Windows 11";
+        RefreshFile(); RefreshTools(); RefreshStartup(); ShowHome();
         Closing += OnClosing;
     }
     private void RefreshFile()
@@ -60,7 +65,72 @@ public partial class MainWindow : Window
     }
     private void BootLogoClick(object sender, RoutedEventArgs e)
     {
-        if (!busy) new BootLogoWindow(paths) { Owner = this }.ShowDialog();
+        if (!busy) { new BootLogoWindow(paths) { Owner = this }.ShowDialog(); ShowHome(); }
+    }
+    private void HomeClick(object sender, RoutedEventArgs e) { if (!busy) ShowHome(); }
+    private void LoginClick(object sender, RoutedEventArgs e) { if (!busy) ShowLogin(); }
+    private void ShowHome()
+    {
+        loginVisible = false; HomeView.Visibility = Visibility.Visible; LoginView.Visibility = Visibility.Collapsed;
+        RefreshFlow();
+    }
+    internal void ShowLogin(int? step = null)
+    {
+        loginVisible = true; HomeView.Visibility = Visibility.Collapsed; LoginView.Visibility = Visibility.Visible;
+        if (step != null) loginStep = Math.Clamp(step.Value, 0, 2);
+        RefreshFlow(); LoginScroll.ScrollToTop();
+    }
+    private void LoginStepClick(object sender, RoutedEventArgs e)
+    {
+        if (busy || sender is not Button button || !int.TryParse(button.Tag?.ToString(), out int step)) return;
+        if (step > 0 && !File.Exists(settings.VideoPath)) { StatusText.Text = "先选择一个可用的本地视频。"; return; }
+        ShowLogin(step);
+    }
+    private void LoginBackClick(object sender, RoutedEventArgs e) { if (!busy) ShowLogin(loginStep - 1); }
+    private void LoginNextClick(object sender, RoutedEventArgs e)
+    {
+        if (busy || !File.Exists(settings.VideoPath)) return;
+        if (loginStep == 1)
+        {
+            try { ReadControls(); }
+            catch (Exception ex) { StatusText.Text = ex.Message; return; }
+        }
+        ShowLogin(loginStep + 1);
+    }
+    private void RefreshFlow()
+    {
+        bool hasVideo = File.Exists(settings.VideoPath);
+        bool verified = settings.VideoSha256.Length == 64 && settings.VerifiedVideoSha256 == settings.VideoSha256;
+        HomeButton.Background = loginVisible ? Brushes.Transparent : (Brush)FindResource("Selection");
+        LoginButton.Background = loginVisible ? (Brush)FindResource("Selection") : Brushes.Transparent;
+        var steps = new[] { VideoStepButton, SettingsStepButton, PreviewStepButton };
+        for (int i = 0; i < steps.Length; i++)
+        {
+            steps[i].Background = loginStep == i ? (Brush)FindResource("Selection") : Brushes.Transparent;
+            steps[i].Foreground = loginStep == i ? (Brush)FindResource("Accent") : (Brush)FindResource("Muted");
+            steps[i].IsEnabled = !busy && (i == 0 || hasVideo);
+        }
+        VideoPage.Visibility = loginStep == 0 ? Visibility.Visible : Visibility.Collapsed;
+        SettingsPage.Visibility = loginStep == 1 ? Visibility.Visible : Visibility.Collapsed;
+        PreviewPage.Visibility = loginStep == 2 ? Visibility.Visible : Visibility.Collapsed;
+        LoginBackButton.Visibility = loginStep == 0 ? Visibility.Collapsed : Visibility.Visible;
+        LoginBackButton.IsEnabled = !busy;
+        LoginNextButton.Visibility = loginStep < 2 ? Visibility.Visible : Visibility.Collapsed;
+        LoginNextButton.IsEnabled = !busy && hasVideo;
+        LoginNextButton.Content = loginStep == 0 ? "下一步：播放设置  →" : "下一步：预览与启用  →";
+        LoginNextButton.ToolTip = hasVideo ? "继续设置" : "先选择一个可用的本地视频。";
+        PreviewButton.Visibility = EnableButton.Visibility = loginStep == 2 ? Visibility.Visible : Visibility.Collapsed;
+        PreviewButton.IsEnabled = !busy && hasVideo;
+        PreviewFileText.Text = hasVideo ? Path.GetFileName(settings.VideoPath) : "尚未选择视频";
+        PreviewSummaryText.Text = (ScreenChoice.SelectedItem as ScreenOption)?.Label + " · 音量 " +
+            VolumeSlider.Value.ToString("0") + "% · 淡出 " + FadeText.Text + " 毫秒";
+        PreviewHeading.Text = startupEnabled ? "登录动画已启用" : "先确认播放效果，再启用";
+        PreviewDescription.Text = startupEnabled ? "下次登录会播放。无需保持设置窗口开启，播放结束后宿主与播放器会退出。" : "全屏预览成功后，才可以启用下次登录播放。";
+        PreviewResultText.Text = verified ? "视频已通过播放验证" : "尚未成功预览";
+        EnableReasonText.Text = startupEnabled ? "如需更换视频或设置，重新保存预览后再启用。也可随时恢复普通登录。" :
+            verified ? "确认预览效果后，点击“启用登录动画”。" : "先保存并全屏预览；加载失败或超时不会允许启用。";
+        EnableButton.ToolTip = EnableReasonText.Text;
+        HomeLoginStatus.Text = StartupBadge.Text;
     }
     private void RefreshTools()
     {
@@ -74,20 +144,23 @@ public partial class MainWindow : Window
         try
         {
             bool enabled = shell.IsStrictEnabled(Sid);
+            startupEnabled = enabled;
             bool owned = shell.HasOwnedStartup(Sid);
             StartupBadge.Text = enabled ? "已启用 · 下次登录生效" : owned ? "登录启动待修复" : "尚未启用";
             RestoreButton.IsEnabled = !busy && owned;
-            EnableButton.Content = owned && !enabled ? "04  修复登录启动" : "04  启用登录动画";
+            EnableButton.Content = owned && !enabled ? "修复登录启动" : "启用登录动画";
             EnableButton.IsEnabled = !busy && !enabled && settings.VideoSha256.Length == 64 && settings.VerifiedVideoSha256 == settings.VideoSha256;
         }
         catch (Exception ex)
         {
+            startupEnabled = false;
             StartupBadge.Text = "无法完整读取登录配置"; EnableButton.IsEnabled = false;
             // A scheduler failure must not prevent recovery of an owned Shell.
             try { RestoreButton.IsEnabled = !busy && shell.ShellEnabled; }
             catch { RestoreButton.IsEnabled = false; }
             StatusText.Text = ex.Message + (RestoreButton.IsEnabled ? " 可先恢复普通登录。" : "");
         }
+        RefreshFlow();
     }
     private Settings ReadControls()
     {
@@ -117,7 +190,7 @@ public partial class MainWindow : Window
             settings.VideoSha256 = ""; settings.VerifiedVideoSha256 = ""; videoInfo = null;
             MetadataText.Text = "视频已选中。可检查格式，或直接保存并全屏预览。";
             StatusText.Text = "新视频尚未保存。已启用的动画会保留到下一次保存预览。";
-            RefreshFile(); RefreshStartup();
+            RefreshFile(); RefreshStartup(); ShowLogin(0);
         }
         catch (Exception ex) { StatusText.Text = ex.Message; }
     }
@@ -126,12 +199,12 @@ public partial class MainWindow : Window
     private async Task WorkAsync(string message, Func<CancellationToken, Task> action)
     {
         if (busy) return;
-        busy = true; operation = new CancellationTokenSource(); Editor.IsEnabled = false; ActionButtons.IsEnabled = false; RestoreButton.IsEnabled = false; BootLogoButton.IsEnabled = false;
+        busy = true; operation = new CancellationTokenSource(); Editor.IsEnabled = false; ActionButtons.IsEnabled = false; RestoreButton.IsEnabled = false; Navigation.IsEnabled = false; LoginSteps.IsEnabled = false; LoginBackButton.IsEnabled = false;
         BusyBar.Visibility = Visibility.Visible; CancelButton.Visibility = Visibility.Visible; StatusText.Text = message;
         try { await action(operation.Token); }
         catch (OperationCanceledException) { StatusText.Text = "操作已取消。"; }
         catch (Exception ex) { StatusText.Text = "操作失败：" + ex.Message; App.Log(paths, ex); }
-        finally { busy = false; operation.Dispose(); operation = null; Editor.IsEnabled = true; ActionButtons.IsEnabled = true; BootLogoButton.IsEnabled = true; BusyBar.Visibility = Visibility.Collapsed; CancelButton.Visibility = Visibility.Collapsed; RefreshTools(); RefreshStartup(); }
+        finally { busy = false; operation.Dispose(); operation = null; Editor.IsEnabled = true; ActionButtons.IsEnabled = true; Navigation.IsEnabled = true; LoginSteps.IsEnabled = true; BusyBar.Visibility = Visibility.Collapsed; CancelButton.Visibility = Visibility.Collapsed; RefreshTools(); RefreshStartup(); }
     }
     private string Tool(string name)
     {
@@ -223,7 +296,15 @@ public partial class MainWindow : Window
     }
     private void HelpClick(object sender, RoutedEventArgs e)
     {
-        MessageBox.Show(this, "建议视频：MP4 / H.264、8 位 yuv420p、SDR；1080p、30 fps、5–15 秒。音轨使用 AAC 或移除。\n\n不匹配的画面比例会保留并加黑边。首帧黑色、尾帧接近壁纸，更容易平滑衔接。HEVC、AV1、10 位、HDR 素材建议先转换。\n\nEsc / 空格跳过。加载失败、超时仍会进入桌面。每次登录播放，解锁不播放。\n\n恢复：点击“恢复普通登录”；或任务管理器 → 运行新任务，运行下面的宿主并加 --restore --data-dir 参数。宿主不依赖 .NET 8。\n\n宿主：" + Path.Combine(paths.AppDirectory, "WinBootVideo.Host.exe") + "\n数据目录：" + paths.DataDirectory + "\n\n详细步骤见应用包中的 README.md。", "视频要求与恢复", MessageBoxButton.OK, MessageBoxImage.Information);
+        InformationWindow.Show(this, "使用说明与恢复", ApplicationGuide.Overview +
+            "\n\n本次运行的数据目录：" + paths.DataDirectory +
+            "\n本次运行的恢复宿主：" + Path.Combine(paths.AppDirectory, "WinBootVideo.Host.exe"));
     }
+    private void AboutClick(object sender, RoutedEventArgs e)
+        => InformationWindow.Show(this, "关于 WinBootVideo",
+            "WinBootVideo " + AppVersion.Display + "\n作者：0x3fffff\n\nWindows 11 开机与登录个性化工具。\n" +
+            "登录动画：设置当前用户的登录入口，验证身份后播放视频。\n开机 Logo：通过 HackBGRT 修改 Windows 加载时的 BGRT 图片。\n\n" +
+            "开源许可：MIT。第三方 HackBGRT、shim 等组件保留各自许可；详见软件目录中的 THIRD-PARTY-NOTICES.md 和 licenses 文件夹。\n\n" +
+            "使用范围与验证记录见 README.md / QA.md。真实冷启动时序及其他固件的兼容性仍需验证。");
     private sealed record ScreenOption(string Device, string Label);
 }

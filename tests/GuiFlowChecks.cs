@@ -34,6 +34,7 @@ internal static class GuiFlowChecks
                     started = true;
                     try
                     {
+                        window.ShowLogin(2);
                         var restore = (Button)window.FindName("RestoreButton");
                         var enable = (Button)window.FindName("EnableButton");
                         var status = (TextBlock)window.FindName("StatusText");
@@ -93,10 +94,27 @@ internal static class GuiFlowChecks
                     started = true;
                     try
                     {
+                        check(((System.Windows.FrameworkElement)window.FindName("HomeView")).IsVisible,
+                            "首次打开显示功能首页，不自动进入设置或写入启动配置");
+                        ((Button)window.FindName("LoginButton")).RaiseEvent(new System.Windows.RoutedEventArgs(Button.ClickEvent));
+                        window.UpdateLayout();
+                        check(((System.Windows.FrameworkElement)window.FindName("VideoPage")).IsVisible,
+                            "首页进入登录动画后，从选择视频开始");
+                        var next = (Button)window.FindName("LoginNextButton");
+                        next.RaiseEvent(new System.Windows.RoutedEventArgs(Button.ClickEvent));
+                        window.UpdateLayout();
+                        check(((System.Windows.FrameworkElement)window.FindName("SettingsPage")).IsVisible,
+                            "向导下一步显示播放设置，保留已保存的媒体");
+                        next.RaiseEvent(new System.Windows.RoutedEventArgs(Button.ClickEvent));
+                        window.UpdateLayout();
+                        check(((System.Windows.FrameworkElement)window.FindName("PreviewPage")).IsVisible,
+                            "设置完成后进入预览页，预览与启用按钮实际可见");
                         var preview = (Button)window.FindName("PreviewButton");
                         var enable = (Button)window.FindName("EnableButton");
                         var status = (TextBlock)window.FindName("StatusText");
                         check(!enable.IsEnabled, "GUI 未预览时保持启用按钮不可用");
+                        check(preview.IsVisible && enable.IsVisible && ((TextBlock)window.FindName("EnableReasonText")).Text.Contains("先保存"),
+                            "未预览时在可见位置解释启用按钮不可用的原因");
                         preview.RaiseEvent(new System.Windows.RoutedEventArgs(Button.ClickEvent));
                         var deadline = Stopwatch.StartNew();
                         while (!preview.IsEnabled && deadline.Elapsed.TotalSeconds < 20) await Task.Delay(50);
@@ -106,6 +124,8 @@ internal static class GuiFlowChecks
                         check(saved.Volume == draft.Volume && saved.FadeOutMilliseconds == draft.FadeOutMilliseconds && saved.CoverOtherScreens == draft.CoverOtherScreens && saved.MaxDurationSeconds == draft.MaxDurationSeconds,
                             "GUI 导入视频与确认预览后保留用户设置");
                         check(!registry.Current.Exists, "GUI 预览不写入登录 Shell");
+                        check(((TextBlock)window.FindName("PreviewResultText")).Text.Contains("已通过"),
+                            "实际预览成功后更新向导的播放验证状态");
                         if (fullscreen)
                         {
                             // The successful production GUI flow has already checked the

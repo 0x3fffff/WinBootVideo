@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 using WinBootVideo.Core;
@@ -24,7 +25,9 @@ public partial class BootLogoWindow : Window
     private BootLogoEnvironment? environment;
     private bool probePassed;
     private bool alreadyInstalled;
+    private bool? logoIsDefault;
     private bool busy;
+    private int step;
     public BootLogoWindow(AppPaths paths, Func<BootLogoRequest, Task<BootLogoResponse>>? executor = null, Func<string, bool>? confirmation = null,
         Func<BootLogoJournal?>? journalReader = null)
     {
@@ -50,6 +53,90 @@ public partial class BootLogoWindow : Window
         InstallLogoButton.ToolTip = InstallHint.Text;
         try { RestoreLogoButton.IsEnabled = !busy && readJournal() is { Phase: not "Restored" }; }
         catch { RestoreLogoButton.IsEnabled = false; }
+        RefreshFlow();
+    }
+    internal void ShowStep(int value)
+    {
+        step = Math.Clamp(value, 0, 3); RefreshFlow();
+        if (step == 3 && alreadyInstalled && logoIsDefault == true) FirstBootSteps.IsExpanded = false;
+        LogoScroll.ScrollToTop();
+    }
+    private void LogoStepClick(object sender, RoutedEventArgs e)
+    {
+        if (!busy && sender is Button button && int.TryParse(button.Tag?.ToString(), out int value)) ShowStep(value);
+    }
+    private void BackClick(object sender, RoutedEventArgs e) { if (!busy) ShowStep(step - 1); }
+    private void NextClick(object sender, RoutedEventArgs e)
+    {
+        Refresh();
+        if (busy || !LogoNextButton.IsEnabled) return;
+        if (step == 3) { Close(); return; }
+        ShowStep(alreadyInstalled ? 3 : step + 1);
+    }
+    private void CloseClick(object sender, RoutedEventArgs e) { if (!busy) Close(); }
+    private void RefreshFlow()
+    {
+        var pages = new FrameworkElement[] { CheckPage, ImagePage, InstallPage, FinishPage };
+        var buttons = new[] { CheckStepButton, ImageStepButton, InstallStepButton, FinishStepButton };
+        string[] titles = { "先检查电脑是否支持", "准备你的开机图片", "确认恢复准备，再安装", "试启动，再保存默认入口" };
+        string[] descriptions =
+        {
+            "管理员检查只读取系统和启动信息，不会安装或更改设置。",
+            "选择图片后自动转换，导出准备包并保留恢复说明。",
+            "只创建独立启动入口。安装完成后，Windows Boot Manager 仍是默认。",
+            "安装完成不会自动变成默认。请按下面的步骤验证与保存。"
+        };
+        for (int i = 0; i < pages.Length; i++)
+        {
+            pages[i].Visibility = step == i ? Visibility.Visible : Visibility.Collapsed;
+            buttons[i].Background = step == i ? (Brush)FindResource("Selection") : Brushes.Transparent;
+            buttons[i].Foreground = step == i ? (Brush)FindResource("Accent") : (Brush)FindResource("Muted");
+        }
+        LogoPageTitle.Text = step == 3 && alreadyInstalled && logoIsDefault == true ? "默认启动入口已保存" : titles[step];
+        LogoPageDescription.Text = step == 3 && alreadyInstalled && logoIsDefault == true ?
+            "只读检查确认 HackBGRT 已为默认。请验证重启与关机后开机的效果。" : descriptions[step];
+        bool defaultSaved = alreadyInstalled && logoIsDefault == true;
+        CompletedPageDetails.Visibility = defaultSaved ? Visibility.Visible : Visibility.Collapsed;
+        FirstSetupReference.Visibility = defaultSaved ? Visibility.Collapsed : Visibility.Visible;
+        FinishStepButton.Content = defaultSaved ? "04  完成与恢复" : "04  首次启动与生效";
+        LogoSteps.IsEnabled = CloseLogoButton.IsEnabled = LogoBackButton.IsEnabled = !busy;
+        LogoBackButton.Visibility = step == 0 ? Visibility.Collapsed : Visibility.Visible;
+        InstallLogoButton.Visibility = step == 2 && !alreadyInstalled ? Visibility.Visible : Visibility.Collapsed;
+        LogoNextButton.Visibility = step == 2 && !alreadyInstalled ? Visibility.Collapsed : Visibility.Visible;
+        bool expired = environment != null && (DateTime.UtcNow - environment.CheckedUtc).TotalMinutes is > 10 or < -1;
+        bool supported = probePassed && environment != null && environment.Blockers().Count == 0 && !expired;
+        LogoNextButton.IsEnabled = !busy && (alreadyInstalled || step switch
+        {
+            0 => supported,
+            1 => image != null && prepared.Length > 0,
+            2 => false,
+            _ => true
+        });
+        LogoNextButton.Content = alreadyInstalled && step < 3 ? "查看首次启动与生效步骤  →" : step switch
+        {
+            0 => "下一步：准备图片  →",
+            1 => "下一步：确认与安装  →",
+            _ => "关闭向导"
+        };
+        LogoNextButton.ToolTip = step == 0 && !supported ? "先完成管理员只读检查；不支持的配置请查看报告。" :
+            step == 1 && (image == null || prepared.Length == 0) ? "先选择图片并导出准备包。" : "继续";
+        PreparedText.Text = prepared.Length > 0 ? "已导出：" + prepared : "尚未导出。建议把恢复说明另存到手机或其他设备。";
+        PreparedText.ToolTip = prepared;
+        LogoBadge.Text = busy ? "操作进行中" : alreadyInstalled ? logoIsDefault switch
+        {
+            true => "已安装 · 已设为默认",
+            false => "已安装 · 尚未设为默认",
+            _ => "已安装 · 默认入口待检查"
+        } : expired ? "检查已过期" : supported ? "检查已通过" :
+            environment != null ? "安装条件未满足" : "尚未检查";
+        InstalledHeading.Text = alreadyInstalled ? "Logo 已安装，无需重复安装" : "安装与默认启动是两件事";
+        InstalledDescription.Text = alreadyInstalled ? logoIsDefault switch
+        {
+            true => "已核验文件、恢复记录及默认启动项。Logo 保存在 EFI，无需让软件常驻。固件更新或恢复默认设置后，若效果消失，请先重新检查启动顺序。",
+            false => "文件与启动项已保存，Windows Boot Manager 仍为默认。下面的单次试启动与 BIOS 保存步骤完成后，才能让每次开机都显示新 Logo。",
+            _ => "文件已保存在 EFI。请回到第一步运行只读检查，确认默认启动入口；无需重复安装。"
+        } :
+            "安装后 Logo 保存在 EFI。先单次试启动，确认效果和 Windows 登录都正常，再手动保存默认入口。";
     }
     private List<string> InstallationRequirements()
     {
@@ -78,7 +165,7 @@ public partial class BootLogoWindow : Window
     internal void SelectImage(string path)
     {
         if (busy) return;
-        source = path; ConvertImage();
+        source = path; ConvertImage(); ShowStep(1);
     }
     private void CanvasChanged(object sender, SelectionChangedEventArgs e) { if (IsInitialized && source.Length != 0 && !busy) ConvertImage(); }
     private void ConvertImage()
@@ -113,12 +200,13 @@ public partial class BootLogoWindow : Window
     }
     private async void ProbeClick(object sender, RoutedEventArgs e) => await Work(async () =>
     {
-        environment = null; probePassed = false; alreadyInstalled = false;
+        environment = null; probePassed = false; alreadyInstalled = false; logoIsDefault = null;
         HardwareText.Text = "正在进行管理员只读检查…"; Refresh();
         BootLogoResponse response;
         try { response = await execute(new BootLogoRequest()); }
         catch { HardwareText.Text = "只读检查未完成；尚不能确认安装条件，请重新检查。"; throw; }
         environment = response.Environment; probePassed = response.Success; alreadyInstalled = response.Success && response.AlreadyInstalled;
+        logoIsDefault = alreadyInstalled ? response.LogoIsDefault : null;
         HardwareText.Text = environment == null ? response.Message :
             environment.Model + "\nUEFI x64：" + (environment.Uefi && environment.X64 ? "是" : "否 / 未知") +
             " · 固件：" + (environment.FirmwareManufacturer.Length == 0 ? "未知" : environment.FirmwareManufacturer) +
@@ -127,6 +215,7 @@ public partial class BootLogoWindow : Window
             " · 可用：" + (environment.EspFreeBytes == null ? "未知" : environment.EspFreeBytes.Value / (1024 * 1024) + " MB") +
             "\n" + response.Message;
         LogoStatus.Text = response.Message;
+        if (alreadyInstalled) ShowStep(3);
     });
     private void ConfirmationChanged(object sender, RoutedEventArgs e) => Refresh();
     private async void InstallClick(object sender, RoutedEventArgs e)
@@ -141,12 +230,14 @@ public partial class BootLogoWindow : Window
             var result = await execute(new BootLogoRequest { Action = "install", ImageFile = Path.Combine(prepared, "splash.bmp"), ImageHash = BootLogoPackage.Hash(image),
                 RescueReady = RescueCheck.IsChecked == true, ManualTrialAccepted = TrialCheck.IsChecked == true, ShimUnderstood = ShimCheck.IsChecked == true });
             LogoStatus.Text = result.Message; environment = null; probePassed = false; alreadyInstalled = result.Success;
+            logoIsDefault = result.Success ? result.LogoIsDefault : null;
+            if (result.Success) ShowStep(3);
         });
     }
     private async void RestoreClick(object sender, RoutedEventArgs e)
     {
         if (!confirm("将只移除本软件记录的 Logo 启动项，保留 Windows 启动器和 EFI Logo 文件。继续恢复？")) return;
-        await Work(async () => { var result = await execute(new BootLogoRequest { Action = "restore" }); LogoStatus.Text = result.Message; environment = null; probePassed = false; alreadyInstalled = false; });
+        await Work(async () => { var result = await execute(new BootLogoRequest { Action = "restore" }); LogoStatus.Text = result.Message; environment = null; probePassed = false; alreadyInstalled = false; logoIsDefault = null; });
     }
     private async Task Work(Func<Task> action)
     {
@@ -185,10 +276,9 @@ public partial class BootLogoWindow : Window
     private void FirmwareDetailsClick(object sender, RoutedEventArgs e) => ShowText("开机 Logo · 只读启动项详情", environment?.FirmwareDetails ?? "尚未读取固件启动项。");
     private void ShowText(string title, string text)
     {
-        var window = new Window { Title = title, Owner = this, Width = 820, Height = 690, WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = new TextBox { Text = text, IsReadOnly = true, TextWrapping = TextWrapping.Wrap,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(20) } };
-        window.ShowDialog();
+        InformationWindow.Show(this, title, text);
     }
+    private void FirstBootClick(object sender, RoutedEventArgs e)
+        => ShowText("开机 Logo · 首次安全验证步骤", BootLogoPackage.FirstBootGuide);
     private void ShimGuideClick(object sender, RoutedEventArgs e) => Process.Start(new ProcessStartInfo("https://github.com/Metabolix/HackBGRT/blob/v2.6.0/shim.md") { UseShellExecute = true });
 }

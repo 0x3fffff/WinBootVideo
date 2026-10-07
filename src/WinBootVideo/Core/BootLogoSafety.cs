@@ -251,7 +251,10 @@ public sealed class BootLogoRegistration
     }
     // Read-only verification of our recorded installation. Never broadens first-install rules.
     public string VerifyInstalled(Plan plan, Guid partition)
+        => VerifyInstalled(plan, partition, out _);
+    public string VerifyInstalled(Plan plan, Guid partition, out bool logoIsDefault)
     {
+        logoIsDefault = false;
         ValidatePlan(plan);
         if (plan.Number > 255 || BootLogoEntry.Parse(plan.WindowsEntry.Data).Partition != partition)
             throw new InvalidDataException("Logo 恢复记录与当前 EFI 分区不一致。");
@@ -279,6 +282,7 @@ public sealed class BootLogoRegistration
             if (preserved.TryGetValue(id, out var expected) && Equal(value, expected)) continue;
             if (value != null) throw new InvalidDataException("检测到恢复记录之外的固件项 " + Name(id) + "，停止安装；不要删除它绕过检查。");
         }
+        logoIsDefault = order[0] == plan.Number;
         return "已安装并核验本软件的 " + Name(plan.Number) + "（启动项完整字节及文件校验通过）。" +
             (order[0] == plan.Number ? "HackBGRT 当前为默认启动项；无需重复安装。" :
             "Windows Boot Manager 仍是默认；请从固件启动菜单单次选择 HackBGRT 试启动，验证成功后再手动设为默认。") +

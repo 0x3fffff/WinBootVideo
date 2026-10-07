@@ -22,6 +22,7 @@ public sealed class BootLogoRequest
 public sealed class BootLogoResponse
 {
     public bool AlreadyInstalled { get; set; }
+    public bool? LogoIsDefault { get; set; }
     public bool Success { get; set; }
     public string Message { get; set; } = "";
     public BootLogoEnvironment? Environment { get; set; }
@@ -98,9 +99,9 @@ public static class BootLogoInstaller
                     journal.InstalledFiles.Values.Append(journal.WindowsLoaderHash).Any(hash => hash == null || hash.Length != 64 || hash.Any(c => !Uri.IsHexDigit(c))))
                     throw new InvalidDataException("Logo 文件校验记录不完整。");
                 verifyInstalledFiles(journal);
-                string message = registration.VerifyInstalled(journal.Plan, partition);
+                string message = registration.VerifyInstalled(journal.Plan, partition, out bool logoIsDefault);
                 environment.FirmwareDetails += "\n\n" + message;
-                return new BootLogoResponse { Success = true, AlreadyInstalled = true, Environment = environment,
+                return new BootLogoResponse { Success = true, AlreadyInstalled = true, LogoIsDefault = logoIsDefault, Environment = environment,
                     RecoveryDirectory = journal.RecoveryDirectory, Message = message };
             }
             registration.Prepare(Guid.Parse(environment.EspPartitionGuid));
@@ -228,7 +229,7 @@ public static class BootLogoInstaller
             VerifyOfficialFiles(logo, stage, bmp);
             return ExpectedFiles.ToDictionary(name => name, name => BootLogoPackage.HashFile(Path.Combine(logo, name)), StringComparer.OrdinalIgnoreCase);
         }, () => CheckWindows(windows, windowsHash));
-        return new BootLogoResponse { Success = true, AlreadyInstalled = true, Environment = env, RecoveryDirectory = session,
+        return new BootLogoResponse { Success = true, AlreadyInstalled = true, LogoIsDefault = false, Environment = env, RecoveryDirectory = session,
             Message = "安装并读回核验完成。Windows Boot Manager 仍是默认；请从固件启动菜单单次选择 HackBGRT 试启动。恢复记录：" + session };
     }
     private static BootLogoResponse Restore(BootLogoEnvironment env)

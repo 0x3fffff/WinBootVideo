@@ -1,92 +1,167 @@
-<Window x:Class="WinBootVideo.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="WinBootVideo · 登录动画 (0.2.6)" Width="1100" Height="810" MinWidth="1000" MinHeight="740" WindowStartupLocation="CenterScreen" Background="#F5F7FA" AllowDrop="True" Drop="OnDrop" DragOver="OnDragOver">
-  <Grid Background="#F5F7FA">
-    <Grid.ColumnDefinitions><ColumnDefinition Width="184"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-    <Border Background="#ECF1F7" BorderBrush="#DFE5ED" BorderThickness="0,0,1,0">
-      <Grid Margin="22,32,18,24">
+<Window x:Class="WinBootVideo.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="WinBootVideo" Width="1180" Height="820" MinWidth="980" MinHeight="720" WindowStartupLocation="CenterScreen" Background="{StaticResource Surface}" AllowDrop="True" Drop="OnDrop" DragOver="OnDragOver">
+  <Grid>
+    <Grid.ColumnDefinitions><ColumnDefinition Width="206"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+    <Border Background="White" BorderBrush="#E2E7EE" BorderThickness="0,0,1,0">
+      <Grid Margin="18,28,18,20">
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-        <StackPanel>
-          <Border Width="42" Height="42" CornerRadius="10" Background="#146CC4" HorizontalAlignment="Left"><TextBlock Text="WV" Foreground="White" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
-          <TextBlock Text="WinBootVideo" FontSize="18" FontWeight="SemiBold" Margin="0,15,0,5"/>
-          <TextBlock Text="让登录多一点仪式感" Style="{StaticResource Small}"/>
+        <StackPanel Margin="8,0,0,0">
+          <Border Width="40" Height="40" CornerRadius="10" Background="{StaticResource Accent}" HorizontalAlignment="Left"><TextBlock Text="WV" Foreground="White" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+          <TextBlock Text="WinBootVideo" FontSize="20" FontWeight="SemiBold" Margin="0,15,0,6"/>
+          <TextBlock Text="开机与登录个性化" Style="{StaticResource Small}"/>
         </StackPanel>
-        <StackPanel Grid.Row="1" Margin="-8,34,-4,0">
-          <Border Background="#DCE9F7" CornerRadius="6" Padding="13,12"><TextBlock Text="▶  登录动画" Foreground="#105EA8" FontWeight="SemiBold"/></Border>
-          <Button x:Name="BootLogoButton" Content="▣  开机 Logo" Click="BootLogoClick" HorizontalContentAlignment="Left" Background="Transparent" BorderBrush="Transparent" Margin="0,8,0,0"/>
+        <StackPanel x:Name="Navigation" Grid.Row="1" Margin="0,30,0,0">
+          <Button x:Name="HomeButton" Content="首页" Style="{StaticResource NavigationButton}" Click="HomeClick"/>
+          <Button x:Name="LoginButton" Content="登录动画" Style="{StaticResource NavigationButton}" Click="LoginClick"/>
+          <Button x:Name="BootLogoButton" Content="开机 Logo" Style="{StaticResource NavigationButton}" Click="BootLogoClick"/>
         </StackPanel>
         <StackPanel Grid.Row="3">
-          <TextBlock Text="WINDOWS 11" FontSize="11" FontWeight="SemiBold" Foreground="#657487"/>
-          <TextBlock Text="个人使用初版 0.2.6" Style="{StaticResource Small}" Margin="0,4,0,16"/>
-          <Button Content="视频要求与恢复说明" Click="HelpClick" Padding="8,9" FontSize="11"/>
+          <Button Content="使用说明与恢复" Click="HelpClick" Style="{StaticResource NavigationButton}" FontSize="12"/>
+          <Button Content="关于 WinBootVideo" Click="AboutClick" Style="{StaticResource NavigationButton}" FontSize="12"/>
+          <Border BorderBrush="#E7EBF0" BorderThickness="0,1,0,0" Margin="8,15,8,0" Padding="0,14,0,0">
+            <StackPanel><TextBlock Text="作者  0x3fffff" FontSize="12"/><TextBlock x:Name="VersionText" Text="0.3.0 · Windows 11" Style="{StaticResource Small}" Margin="0,4,0,0"/></StackPanel>
+          </Border>
         </StackPanel>
       </Grid>
     </Border>
-    <Grid Grid.Column="1" Margin="28,26,28,20">
-      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-      <Grid Margin="0,0,0,20">
-        <StackPanel><TextBlock Text="登录动画" FontSize="26" FontWeight="SemiBold"/><TextBlock Text="输入密码 / PIN 后播放，每次登录一次，解锁不重复。" Style="{StaticResource Small}" Margin="0,8,160,0"/></StackPanel>
-        <Border Background="#E7EDF4" CornerRadius="12" Padding="12,6" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="0,6,0,0"><TextBlock x:Name="StartupBadge" Text="尚未启用" FontSize="12"/></Border>
-      </Grid>
-      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <Grid x:Name="Editor">
-          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="278"/></Grid.ColumnDefinitions>
+    <Grid Grid.Column="1" Margin="32,28,32,24">
+      <Grid x:Name="HomeView">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <StackPanel Margin="0,0,0,24"><TextBlock Text="设置你的开机体验" Style="{StaticResource PageTitle}"/><TextBlock Text="两种独立功能，分别设置与恢复。先选你想改变的阶段。" Style="{StaticResource Small}" Margin="0,8,0,0"/></StackPanel>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
           <StackPanel>
-            <Border Style="{StaticResource Card}">
+            <Border Style="{StaticResource Card}" Padding="24">
               <StackPanel>
-                <TextBlock Text="01  选择视频" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,14"/>
-                <Border Background="#152236" CornerRadius="8" Height="120" Margin="0,0,0,14">
-                  <StackPanel HorizontalAlignment="Stretch" VerticalAlignment="Center" Margin="14">
-                    <TextBlock Text="▷" FontSize="35" Foreground="#BED6F3" HorizontalAlignment="Center"/>
-                    <TextBlock x:Name="FileNameText" Text="把视频拖到这里，或点击选择" Foreground="White" TextAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Margin="0,10,0,6" FontWeight="SemiBold"/>
-                    <TextBlock Text="MP4 · H.264 · SDR · 推荐 5–15 秒" FontSize="11" Foreground="#AEBED2" TextAlignment="Center"/>
+                <TextBlock Text="从开机到桌面" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,18"/>
+                <UniformGrid Columns="5">
+                  <StackPanel><TextBlock Text="01" Foreground="#8190A2" FontSize="11"/><TextBlock Text="通电" Margin="0,8,0,4" FontWeight="SemiBold"/><TextBlock Text="固件初始画面" Style="{StaticResource Small}"/></StackPanel>
+                  <StackPanel><TextBlock Text="02" Foreground="{StaticResource Accent}" FontSize="11"/><TextBlock Text="开机 Logo" Margin="0,8,0,4" FontWeight="SemiBold"/><TextBlock Text="Windows 加载阶段" Style="{StaticResource Small}"/></StackPanel>
+                  <StackPanel><TextBlock Text="03" Foreground="#8190A2" FontSize="11"/><TextBlock Text="验证身份" Margin="0,8,0,4" FontWeight="SemiBold"/><TextBlock Text="密码 / PIN / 图片密码" Style="{StaticResource Small}"/></StackPanel>
+                  <StackPanel><TextBlock Text="04" Foreground="{StaticResource Accent}" FontSize="11"/><TextBlock Text="登录动画" Margin="0,8,0,4" FontWeight="SemiBold"/><TextBlock Text="进入桌面前的视频" Style="{StaticResource Small}"/></StackPanel>
+                  <StackPanel><TextBlock Text="05" Foreground="#8190A2" FontSize="11"/><TextBlock Text="桌面" Margin="0,8,0,4" FontWeight="SemiBold"/><TextBlock Text="正常使用 Windows" Style="{StaticResource Small}"/></StackPanel>
+                </UniformGrid>
+              </StackPanel>
+            </Border>
+            <Grid Margin="0,20,0,0">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <Border Style="{StaticResource Card}" Padding="24">
+                <StackPanel>
+                  <TextBlock Text="登录动画" Style="{StaticResource SectionTitle}"/>
+                  <TextBlock Text="完成身份验证后播放视频，再淡出到桌面。每次登录播放，锁屏解锁不重复。" Style="{StaticResource Small}" MinHeight="62"/>
+                  <Border Background="#F1F5FA" Padding="12" CornerRadius="6" Margin="0,20,0,20"><TextBlock x:Name="HomeLoginStatus" Text="尚未启用" FontSize="12"/></Border>
+                  <Button Content="设置登录动画  →" Style="{StaticResource PrimaryButton}" Click="LoginClick" HorizontalAlignment="Left"/>
+                  <TextBlock Text="需要成功预览 · 当前用户设置" Style="{StaticResource Small}" Margin="0,14,0,0"/>
+                </StackPanel>
+              </Border>
+              <Border Grid.Column="2" Style="{StaticResource Card}" Padding="24">
+                <StackPanel>
+                  <TextBlock Text="开机 Logo" Style="{StaticResource SectionTitle}"/>
+                  <TextBlock Text="替换 Windows 加载时的静态图片。支持自动转换图片，提供安装检查与 BIOS 操作指引。" Style="{StaticResource Small}" MinHeight="62"/>
+                  <Border Background="#F1F5FA" Padding="12" CornerRadius="6" Margin="0,20,0,20"><TextBlock Text="进入向导后，通过管理员检查确认状态" FontSize="12"/></Border>
+                  <Button Content="设置开机 Logo  →" Click="BootLogoClick" HorizontalAlignment="Left"/>
+                  <TextBlock Text="需要管理员权限 · 先试启动再设为默认" Style="{StaticResource Small}" Margin="0,14,0,0"/>
+                </StackPanel>
+              </Border>
+            </Grid>
+            <TextBlock Text="首次打开软件不会更改启动设置。可随时在对应功能中恢复。" Style="{StaticResource Small}" Margin="2,20,0,0"/>
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
+      <Grid x:Name="LoginView" Visibility="Collapsed">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Grid Margin="0,0,0,22">
+          <StackPanel><TextBlock Text="登录动画" Style="{StaticResource PageTitle}"/><TextBlock Text="身份验证完成后播放，动画结束后进入桌面。" Style="{StaticResource Small}" Margin="0,8,180,0"/></StackPanel>
+          <Border Background="#EAF0F7" CornerRadius="6" Padding="12,7" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="0,4,0,0"><TextBlock x:Name="StartupBadge" Text="尚未启用" FontSize="12"/></Border>
+        </Grid>
+        <UniformGrid x:Name="LoginSteps" Grid.Row="1" Columns="3" Margin="0,0,0,20">
+          <Button x:Name="VideoStepButton" Content="01  选择视频" Tag="0" Style="{StaticResource StepButton}" Click="LoginStepClick"/>
+          <Button x:Name="SettingsStepButton" Content="02  播放设置" Tag="1" Style="{StaticResource StepButton}" Click="LoginStepClick"/>
+          <Button x:Name="PreviewStepButton" Content="03  预览与启用" Tag="2" Style="{StaticResource StepButton}" Click="LoginStepClick"/>
+        </UniformGrid>
+        <ScrollViewer x:Name="LoginScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <Grid x:Name="Editor">
+            <StackPanel x:Name="VideoPage">
+              <TextBlock Text="先选一段你喜欢的视频" Style="{StaticResource SectionTitle}"/>
+              <TextBlock Text="推荐 5–15 秒的 MP4，H.264 / SDR。也可以拖入本地文件。" Style="{StaticResource Small}" Margin="0,0,0,18"/>
+              <Border Style="{StaticResource Card}" Padding="22">
+                <StackPanel>
+                  <Border Background="#172233" CornerRadius="8" Height="160" Margin="0,0,0,18">
+                    <StackPanel VerticalAlignment="Center" Margin="20">
+                      <Path Data="M 0,0 L 0,26 L 22,13 Z" Stroke="#B9D5FA" StrokeThickness="2" Width="24" Height="28" Stretch="Uniform" HorizontalAlignment="Center"/>
+                      <TextBlock x:Name="FileNameText" Text="尚未选择视频" Foreground="White" TextAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Margin="0,16,0,6" FontWeight="SemiBold"/>
+                      <TextBlock Text="MP4 · H.264 · 8 位 · SDR" FontSize="11" Foreground="#B0BFD3" TextAlignment="Center"/>
+                    </StackPanel>
+                  </Border>
+                  <TextBlock x:Name="FilePathText" Text="尚未选择视频" Style="{StaticResource Small}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" Margin="0,0,0,14"/>
+                  <WrapPanel><Button x:Name="ChooseVideoButton" Content="选择视频…" Click="ChooseClick" Margin="0,0,8,0"/><Button Content="检查格式" Click="ProbeClick"/></WrapPanel>
+                  <TextBlock x:Name="MetadataText" Text="格式检查为可选项，实际播放效果以全屏预览为准。" Style="{StaticResource Small}" Margin="0,14,0,0"/>
+                </StackPanel>
+              </Border>
+              <Expander Header="视频不兼容？展开转换工具" Margin="0,18,0,6">
+                <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+                  <StackPanel>
+                    <TextBlock Text="输出 1080p / 30 fps MP4，保留画面比例并加黑边，HDR 转为 SDR。原文件保留。" Style="{StaticResource Small}"/>
+                    <WrapPanel Margin="0,14,0,14"><TextBlock Text="保留前" VerticalAlignment="Center" Margin="0,0,8,0"/><TextBox x:Name="TrimSeconds" Text="15" Width="64"/><TextBlock Text="秒" VerticalAlignment="Center" Margin="8,0,20,0"/><CheckBox x:Name="MuteConversion" Content="移除音轨" VerticalAlignment="Center" Margin="0"/></WrapPanel>
+                    <WrapPanel><Button Content="转换并选用…" Click="ConvertClick" Margin="0,0,8,0"/><Button Content="选择 FFmpeg…" Click="ToolClick"/></WrapPanel>
+                    <TextBlock x:Name="ToolsText" Style="{StaticResource Small}" Margin="0,12,0,0"/>
                   </StackPanel>
                 </Border>
-                <TextBlock x:Name="FilePathText" Text="尚未选择视频" Style="{StaticResource Small}" TextTrimming="CharacterEllipsis" MaxHeight="42" Margin="0,0,0,12"/>
-                <WrapPanel><Button Content="选择视频…" Click="ChooseClick" Margin="0,0,8,0"/><Button Content="检查视频" Click="ProbeClick"/></WrapPanel>
-                <TextBlock x:Name="MetadataText" Text="检查格式后，使用全屏预览确认实际播放效果。" Style="{StaticResource Small}" Margin="0,13,0,0"/>
-              </StackPanel>
-            </Border>
-            <Border Style="{StaticResource Card}" Margin="0,16,0,0">
-              <StackPanel>
-                <TextBlock Text="02  兼容处理（可选）" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,9"/>
-                <TextBlock Text="生成 1080p / 30 fps MP4，保留比例并加黑边。HDR 转为 SDR；原视频保留。" Style="{StaticResource Small}"/>
-                <Grid Margin="0,12,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="60"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                  <TextBlock Text="保留前" VerticalAlignment="Center" Margin="0,0,8,0"/><TextBox x:Name="TrimSeconds" Text="15" Grid.Column="1"/><TextBlock Text="秒" Grid.Column="2" VerticalAlignment="Center" Margin="8,0,14,0"/><CheckBox x:Name="MuteConversion" Content="移除音轨" Grid.Column="3" VerticalAlignment="Center" Margin="0"/>
+              </Expander>
+            </StackPanel>
+            <StackPanel x:Name="SettingsPage" Visibility="Collapsed">
+              <TextBlock Text="调整播放效果" Style="{StaticResource SectionTitle}"/>
+              <TextBlock Text="可以直接使用默认值，下一步会在你的屏幕上全屏预览。" Style="{StaticResource Small}" Margin="0,0,0,18"/>
+              <Border Style="{StaticResource Card}" Padding="24">
+                <Grid>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="36"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                  <StackPanel><TextBlock Text="播放屏幕" Style="{StaticResource Label}"/><ComboBox x:Name="ScreenChoice" DisplayMemberPath="Label" SelectedValuePath="Device"/><CheckBox x:Name="CoverOthers" Content="播放时遮住其他屏幕" IsChecked="True" Margin="0,14,0,0"/></StackPanel>
+                  <StackPanel Grid.Column="2"><Grid><TextBlock Text="音量" Style="{StaticResource Label}"/><TextBlock Text="{Binding ElementName=VolumeSlider, Path=Value, StringFormat={}{0:0}%}" HorizontalAlignment="Right" Foreground="{StaticResource Muted}"/></Grid><Slider x:Name="VolumeSlider" Minimum="0" Maximum="100" Value="35" TickFrequency="5" Margin="0,12,0,0"/><TextBlock Text="设为 0 可静音。" Style="{StaticResource Small}" Margin="0,14,0,0"/></StackPanel>
                 </Grid>
-                <WrapPanel><Button Content="转换并选用…" Click="ConvertClick" Margin="0,0,8,0"/><Button Content="选择 FFmpeg…" Click="ToolClick" Padding="10,9"/></WrapPanel>
-                <TextBlock x:Name="ToolsText" Style="{StaticResource Small}" Margin="0,10,0,0"/>
-              </StackPanel>
-            </Border>
-          </StackPanel>
-          <StackPanel Grid.Column="2">
-            <Border Style="{StaticResource Card}">
-              <StackPanel>
-                <TextBlock Text="播放设置" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,20"/>
-                <TextBlock Text="播放屏幕" Style="{StaticResource Label}"/><ComboBox x:Name="ScreenChoice" DisplayMemberPath="Label" SelectedValuePath="Device"/>
-                <CheckBox x:Name="CoverOthers" Content="播放时遮住其他屏幕" IsChecked="True" Margin="0,12,0,20"/>
-                <Grid><TextBlock Text="音量" Style="{StaticResource Label}"/><TextBlock Text="{Binding ElementName=VolumeSlider, Path=Value, StringFormat={}{0:0}%}" HorizontalAlignment="Right" Foreground="#657487"/></Grid>
-                <Slider x:Name="VolumeSlider" Minimum="0" Maximum="100" Value="35" TickFrequency="5" Margin="0,5,0,18"/>
-                <TextBlock Text="退出淡出（毫秒）" Style="{StaticResource Label}"/><TextBox x:Name="FadeText" Text="650" Margin="0,0,0,16"/>
-                <TextBlock Text="播放等待上限（秒）" Style="{StaticResource Label}"/><TextBox x:Name="MaximumText" Text="45"/>
-                <TextBlock Text="桌面可见后计时，包括加载、播放及淡出。输入密码的时间不计入。" Style="{StaticResource Small}" Margin="0,7,0,18"/>
-                <TextBlock Text="视频加载等待（秒）" Style="{StaticResource Label}"/><TextBox x:Name="StartupText" Text="8"/>
-                <TextBlock Text="加载超时后进入桌面。播放器冷启动另有 30 秒上限，输入密码的时间不计入。" Style="{StaticResource Small}" Margin="0,7,0,0"/>
-              </StackPanel>
-            </Border>
-            <Border Background="#EAF2FC" CornerRadius="8" Padding="15" Margin="0,16,0,0">
-              <TextBlock Text="预览中按 Esc 或空格跳过。&#10;动画结束后淡出到桌面。&#10;&#10;桌面前模式：视频首帧呈现后才启动 Explorer，动画在覆盖层中播放，再淡出显示桌面。加载失败时跳过动画进入桌面。&#10;&#10;成功预览后才可以启用。" Foreground="#35577C" FontSize="12" LineHeight="21"/>
-            </Border>
+              </Border>
+              <Expander Header="高级设置 · 淡出与超时" Margin="0,22,0,0">
+                <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <StackPanel><TextBlock Text="退出淡出（毫秒）" Style="{StaticResource Label}"/><TextBox x:Name="FadeText" Text="650"/><TextBlock Text="动画结束后的过渡时长。" Style="{StaticResource Small}" Margin="0,9,0,0"/></StackPanel>
+                    <StackPanel Grid.Column="2"><TextBlock Text="播放上限（秒）" Style="{StaticResource Label}"/><TextBox x:Name="MaximumText" Text="45"/><TextBlock Text="包括视频加载、播放及淡出。" Style="{StaticResource Small}" Margin="0,9,0,0"/></StackPanel>
+                    <StackPanel Grid.Column="4"><TextBlock Text="加载等待（秒）" Style="{StaticResource Label}"/><TextBox x:Name="StartupText" Text="8"/><TextBlock Text="超时后跳过动画进入桌面。" Style="{StaticResource Small}" Margin="0,9,0,0"/></StackPanel>
+                  </Grid>
+                </Border>
+              </Expander>
+              <TextBlock Text="输入密码的时间不计入播放预算。按 Esc 或空格可跳过；锁屏解锁不会重复播放。" Style="{StaticResource Small}" Margin="2,20,0,0"/>
+            </StackPanel>
+            <StackPanel x:Name="PreviewPage" Visibility="Collapsed">
+              <TextBlock x:Name="PreviewHeading" Text="先确认播放效果，再启用" Style="{StaticResource SectionTitle}"/>
+              <TextBlock x:Name="PreviewDescription" Text="全屏预览成功后，才可以启用下次登录播放。" Style="{StaticResource Small}" Margin="0,0,0,18"/>
+              <Border Style="{StaticResource Card}" Padding="24">
+                <StackPanel>
+                  <TextBlock x:Name="PreviewFileText" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
+                  <TextBlock x:Name="PreviewSummaryText" Style="{StaticResource Small}" Margin="0,8,0,22"/>
+                  <Border BorderBrush="#E5EAF0" BorderThickness="0,1,0,0" Padding="0,20,0,0"><StackPanel>
+                    <TextBlock x:Name="PreviewResultText" Text="尚未成功预览" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="EnableReasonText" Text="先点击下方“保存并全屏预览”，确认视频能够正常播放。" Style="{StaticResource Small}" Margin="0,8,0,0"/>
+                  </StackPanel></Border>
+                </StackPanel>
+              </Border>
+              <Border Background="#EEF4FC" CornerRadius="8" Padding="18" Margin="0,18,0,0"><TextBlock Text="保存预览会把视频复制到应用数据目录，并暂停当前已启用的动画。确认效果后重新启用；保存成功后，原视频可以删除。" Foreground="#355477" FontSize="12" LineHeight="21"/></Border>
+              <TextBlock Text="桌面前模式通过视频首帧确认后启动桌面。真实冷启动时序仍在兼容性验证中；出现问题可恢复普通登录。" Style="{StaticResource Small}" Margin="2,18,0,0"/>
+            </StackPanel>
+          </Grid>
+        </ScrollViewer>
+        <Border Grid.Row="3" Background="White" BorderBrush="#E0E6ED" BorderThickness="1" CornerRadius="8" Padding="14,12" Margin="0,18,0,16">
+          <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <StackPanel><TextBlock x:Name="StatusText" Text="选择一个视频，开始设置你的登录动画。" FontSize="12" MaxHeight="66" TextTrimming="CharacterEllipsis"/><ProgressBar x:Name="BusyBar" Height="3" IsIndeterminate="True" Visibility="Collapsed" Margin="0,9,10,0"/></StackPanel>
+            <Button x:Name="CancelButton" Grid.Column="1" Content="取消" Click="CancelClick" Visibility="Collapsed" Padding="12,5" MinHeight="30" Margin="10,0,0,0"/>
+          </Grid>
+        </Border>
+        <Grid Grid.Row="4">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <Button x:Name="LoginBackButton" Content="上一步" Click="LoginBackClick" Margin="0,0,10,0"/>
+          <Button x:Name="RestoreButton" Grid.Column="1" Content="恢复普通登录" Click="RestoreClick" HorizontalAlignment="Left"/>
+          <StackPanel Grid.Column="2" x:Name="ActionButtons" Orientation="Horizontal">
+            <Button x:Name="PreviewButton" Content="保存并全屏预览" Click="PreviewClick" Margin="0,0,8,0" Visibility="Collapsed"/>
+            <Button x:Name="EnableButton" Content="启用登录动画" Style="{StaticResource PrimaryButton}" Click="EnableClick" ToolTipService.ShowOnDisabled="True" Visibility="Collapsed"/>
+            <Button x:Name="LoginNextButton" Content="下一步：播放设置  →" Style="{StaticResource PrimaryButton}" Click="LoginNextClick" ToolTipService.ShowOnDisabled="True"/>
           </StackPanel>
         </Grid>
-      </ScrollViewer>
-      <Border Grid.Row="2" Background="White" BorderBrush="#DFE5ED" BorderThickness="1" CornerRadius="8" Padding="14,12" Margin="0,16,0,12">
-        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-          <StackPanel><TextBlock x:Name="StatusText" Text="选择一个视频，开始设置你的登录动画。" FontSize="12" TextWrapping="Wrap"/><ProgressBar x:Name="BusyBar" Height="3" IsIndeterminate="True" Visibility="Collapsed" Margin="0,9,10,0"/></StackPanel>
-          <Button x:Name="CancelButton" Grid.Column="1" Content="取消" Click="CancelClick" Visibility="Collapsed" Padding="12,5" MinHeight="28" Margin="8,0,0,0"/>
-        </Grid>
-      </Border>
-      <Grid Grid.Row="3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-        <WrapPanel x:Name="ActionButtons"><Button x:Name="PreviewButton" Content="03  保存并全屏预览" Click="PreviewClick" Margin="0,0,9,0"/><Button x:Name="EnableButton" Content="04  启用登录动画" Style="{StaticResource PrimaryButton}" Click="EnableClick" ToolTip="成功预览后才能启用；无需管理员权限。" ToolTipService.ShowOnDisabled="True"/></WrapPanel>
-        <Button x:Name="RestoreButton" Grid.Column="1" Content="恢复普通登录" Click="RestoreClick" Margin="12,0,0,0"/>
       </Grid>
     </Grid>
   </Grid>

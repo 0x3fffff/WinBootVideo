@@ -1,6 +1,6 @@
 # 验证记录
 
-版本：0.2.6。日期：2026-10-07。构建环境：Windows 11 x64，.NET 8 SDK 8.0.422 / WindowsDesktop 8.0.28，.NET Framework 4.8。
+版本：0.3.0。日期：2026-10-08。构建环境：Windows 11 x64，.NET 8 SDK 8.0.422 / WindowsDesktop 8.0.28，.NET Framework 4.8。
 
 ## 实机 Logo 流程
 
@@ -19,7 +19,10 @@
 | 检查 | 最近通过结果 | 验证范围 |
 | --- | --- | --- |
 | build.ps1 -Test | 125 项 | 登录宿主策略、首帧交接、设置复制、命令行、备份和任务迁移 |
-| Logo 隔离回归 | 476 项 | EFI 数据解析、文件校验、模拟注册与恢复、故障撤销、WPF GUI、辅助 CLI 拒绝路径 |
+| Logo 隔离回归 | 488 项 | EFI 数据解析、文件校验、模拟注册与恢复、故障撤销、向导导航、默认状态、辅助 CLI 拒绝路径 |
+| GUI 窗口预览 | 10 项 | 首页入口、三步导航、禁用原因、实际播放回执、设置保留 |
+| GUI 真实全屏预览 | 14 项 | 完整向导流程、真实播放器、屏幕覆盖和首帧交接，未靠跳过结束 |
+| GUI 故障恢复 | 3 项 | 任务服务故障时仍能恢复自己的 Shell，准确报告部分失败 |
 | 官方安装器夹具 | 包含在 Logo 回归中 | 固定 HackBGRT 2.6.0 的实际路径初始化与文件复制，只使用普通临时目录 |
 
 Logo 回归使用模拟固件；GUI 的安装和恢复执行器为模拟对象。官方安装器夹具不调用固件、BCD、挂载或安装主入口。自动检查不代表完整真实启动测试。
@@ -31,7 +34,9 @@ New-Item -ItemType Directory artifacts\fixtures -Force | Out-Null
 & "$env:ProgramFiles\dotnet\dotnet.exe" run --project tests\WinBootVideo.Checks.csproj -c Release --no-restore -- --boot-logo-only artifacts\fixtures\OfficialLogoFiles.exe artifacts\WinBootVideo
 ```
 
-0.2.6 固定发布目录已通过上述 125 项和 476 项检查；更新后的软件说明界面已渲染并检查。既有个人应用已更新，运行文件逐一核对，个人设置及 Logo 恢复资料保持不变；本次没有重新安装 Logo 或修改固件配置。
+0.3.0 固定发布目录已通过上述检查，首页、登录向导各页及 Logo 向导各页已渲染并检查。GUI 播放检查须在正常 Windows 输入桌面权限上下文运行；受限桌面上下文不能作为真实播放通过结果。本次没有重新安装 Logo 或修改固件配置。
+
+默认启动状态来自已完成文件和启动项归属核验后的 BootOrder，使用结构化字段返回。单次选择 HackBGRT 仍显示“尚未设为默认”；手动保存为第一启动项后显示“已设为默认”。检查失败或未知状态不显示默认已保存，查询全过程不写入固件。
 
 完整媒体回归可运行 `verify.ps1 -FFmpegDirectory <FFmpeg目录>`，要求目录中同时包含 ffmpeg.exe 和 ffprobe.exe。
 

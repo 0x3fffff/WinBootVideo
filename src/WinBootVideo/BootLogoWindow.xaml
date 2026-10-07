@@ -1,93 +1,135 @@
-<Window x:Class="WinBootVideo.BootLogoWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="WinBootVideo · 开机 Logo" Width="1040" Height="800" MinWidth="940" MinHeight="700" WindowStartupLocation="CenterOwner" Background="#F5F7FA">
-  <Grid Margin="28,24" Background="#F5F7FA">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <StackPanel Margin="0,0,0,18">
-      <TextBlock Text="开机 Logo" FontSize="26" FontWeight="SemiBold"/>
-      <TextBlock Text="替换 Windows 加载时的静态 Logo（包括厂商 Logo） · 刚通电时的固件 Logo 可能仍短暂出现" Style="{StaticResource Small}" Margin="0,8,0,0"/>
-    </StackPanel>
-    <ScrollViewer x:Name="LogoScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-      <Grid>
-        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="330"/></Grid.ColumnDefinitions>
-        <StackPanel>
-          <Border Style="{StaticResource Card}">
-            <StackPanel>
-              <TextBlock Text="01  选择与转换图片" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12"/>
-              <Border Background="Black" Height="190" CornerRadius="8" ClipToBounds="True"><Grid>
-                <Image x:Name="LogoPreview" Width="320" Height="180" Stretch="Uniform"/>
-                <TextBlock x:Name="PreviewPlaceholder" Text="静态 Logo 预览" Foreground="#9AAFC8" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-              </Grid></Border>
-              <TextBlock Text="示意预览。固件分辨率可能低于桌面；原比例缩放，透明区域铺黑。" Style="{StaticResource Small}" Margin="0,9,0,12"/>
-              <TextBlock x:Name="ImagePathText" Text="尚未选择图片" Style="{StaticResource Small}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" Margin="0,0,0,12"/>
-              <WrapPanel><Button x:Name="ChooseImageButton" Content="选择图片…" Click="ChooseImageClick" Margin="0,0,8,8"/>
-                <ComboBox x:Name="CanvasChoice" Width="155" SelectedIndex="0" SelectionChanged="CanvasChanged" Margin="0,0,8,8"><ComboBoxItem Content="320 × 180（推荐）"/><ComboBoxItem Content="256 × 256"/><ComboBoxItem Content="400 × 240"/><ComboBoxItem Content="600 × 360"/></ComboBox>
-              </WrapPanel>
-              <TextBlock Text="静态 PNG / JPEG / BMP，最大 16 MB、2000 万像素。输出 24 位未压缩 BMP3（54 字节头）。" Style="{StaticResource Small}"/>
-            </StackPanel>
-          </Border>
-          <Border Style="{StaticResource Card}" Margin="0,14,0,0"><StackPanel>
-            <TextBlock Text="02  检查电脑" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12"/>
-            <TextBlock x:Name="HardwareText" Text="尚未进行管理员只读检查。未知状态会阻止安装。" Style="{StaticResource Small}" Margin="0,0,0,12"/>
-            <WrapPanel><Button x:Name="ProbeButton" Content="管理员只读检查（UAC）" Click="ProbeClick" Margin="0,0,8,0"/>
-              <Button x:Name="FirmwareDetailsButton" Content="启动项详情" Click="FirmwareDetailsClick" IsEnabled="False"/>
-            </WrapPanel>
-            <TextBlock Text="额外启动项可能是 USB、网络或厂商功能，也可能是其他系统；名称不能作为安全依据。检查后可在详情中查看，不要删除它们绕过检查。" Style="{StaticResource Small}" Margin="0,10,0,0"/>
-            <TextBlock Text="支持当前 UEFI x64、单 Windows 启动项、单 EFI 系统分区且系统盘未加密；允许完整核验后的 Insyde 通用 USB / 光驱 / 网络入口并原样保留。加密、多分区、其他系统或未知配置仍阻止安装。" Style="{StaticResource Small}" Margin="0,10,0,0"/>
-          </StackPanel></Border>
-          <Border Style="{StaticResource Card}" Margin="0,14,0,0"><StackPanel>
-            <TextBlock Text="03  准备与确认" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12"/>
-            <TextBlock Text="安装前：保持现有 UEFI / Secure Boot / TPM 设置；准备恢复 U 盘、帐户密码及另一设备上的恢复说明。软件负责定位 EFI，无需手动分配盘符或格式化分区。首次 shim 确认与默认启动顺序调整在安装后试启动时完成。" Style="{StaticResource Small}" Margin="0,0,0,12"/>
-            <TextBlock Text="先导出图片、配置、官方工具和恢复说明到独立文件夹。导出可在不符合安装条件的电脑上使用；导出不会更改启动设置。" Style="{StaticResource Small}"/>
-            <Button x:Name="ExportButton" Content="导出准备包…" Click="ExportClick" HorizontalAlignment="Left" Margin="0,12,0,10" IsEnabled="False"/>
-            <CheckBox x:Name="RescueCheck" Checked="ConfirmationChanged" Unchecked="ConfirmationChanged"><TextBlock Text="已准备可启动的恢复 U 盘，确认帐户密码可用，恢复说明已保存到另一设备" TextWrapping="Wrap"/></CheckBox>
-            <CheckBox x:Name="TrialCheck" Checked="ConfirmationChanged" Unchecked="ConfirmationChanged"><TextBlock Text="了解先从启动菜单单次试启动；成功后再手动设为默认" TextWrapping="Wrap"/></CheckBox>
-            <CheckBox x:Name="ShimCheck" Checked="ConfirmationChanged" Unchecked="ConfirmationChanged"><TextBlock Text="已阅读首次 Secure Boot / shim 哈希确认步骤" TextWrapping="Wrap"/></CheckBox>
-          </StackPanel></Border>
+<Window x:Class="WinBootVideo.BootLogoWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="开机 Logo · WinBootVideo" Width="1180" Height="820" MinWidth="980" MinHeight="720" WindowStartupLocation="CenterOwner" Background="{StaticResource Surface}">
+  <Grid>
+    <Grid.ColumnDefinitions><ColumnDefinition Width="218"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+    <Border Background="White" BorderBrush="#E2E7EE" BorderThickness="0,0,1,0">
+      <Grid Margin="18,28,18,20">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <StackPanel Margin="8,0,0,0"><TextBlock Text="开机 Logo" FontSize="22" FontWeight="SemiBold"/><TextBlock Text="设置向导" Style="{StaticResource Small}" Margin="0,7,0,0"/></StackPanel>
+        <StackPanel x:Name="LogoSteps" Grid.Row="1" Margin="0,28,0,0">
+          <Button x:Name="CheckStepButton" Content="01  检查电脑" Tag="0" Style="{StaticResource StepButton}" Click="LogoStepClick"/>
+          <Button x:Name="ImageStepButton" Content="02  准备图片" Tag="1" Style="{StaticResource StepButton}" Click="LogoStepClick"/>
+          <Button x:Name="InstallStepButton" Content="03  确认与安装" Tag="2" Style="{StaticResource StepButton}" Click="LogoStepClick"/>
+          <Button x:Name="FinishStepButton" Content="04  首次启动与生效" Tag="3" Style="{StaticResource StepButton}" Click="LogoStepClick"/>
         </StackPanel>
-        <StackPanel Grid.Column="2">
-          <Border Style="{StaticResource Card}"><StackPanel>
-            <TextBlock Text="BIOS / UEFI 引导" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,14"/>
-            <TextBlock Text="保持现有 UEFI、CSM、SATA 设置。不要切换启动模式、清空 TPM 或 Secure Boot 密钥。" Style="{StaticResource Small}" Margin="0,0,0,12"/>
-            <TextBlock Text="从 Windows 进入：设置 → 系统 → 恢复 → 高级启动 → 立即重新启动 → 疑难解答 → 高级选项 → UEFI 固件设置。先保存工作。" Style="{StaticResource Small}" Margin="0,0,0,12"/>
-            <Button Content="查看完整引导与恢复说明" Click="GuideClick" Padding="8,9"/>
-          </StackPanel></Border>
-          <Border Style="{StaticResource Card}" Margin="0,14,0,0"><StackPanel>
-            <TextBlock Text="首次启动：安全验证确认" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12"/>
-            <TextBlock Text="首次出现蓝色验证错误时：选 OK，按 Enter；随后在 5 秒倒计时内按任意键进入 MOKManager。保持安全启动开启。" Style="{StaticResource Small}" Margin="0,0,0,10"/>
-            <Expander Header="展开首次确认的 7 个步骤"><TextBlock x:Name="FirstBootGuideText" Style="{StaticResource Small}" Margin="0,10,0,0"/></Expander>
-            <Button Content="HackBGRT 官方 shim 指引 ↗" Click="ShimGuideClick" Padding="8,9" Margin="0,10,0,0"/>
-          </StackPanel></Border>
-          <Border Style="{StaticResource Card}" Margin="0,14,0,0"><StackPanel>
-            <TextBlock Text="让每次开机都生效" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12"/>
-            <TextBlock Text="Logo 已保存在 EFI。试启动并正常登录后，在 BIOS 的 Boot Priority / Boot Order 中把 HackBGRT 放到第一位，保留 Windows Boot Manager，保存退出。无需让软件常驻。" Style="{StaticResource Small}" Margin="0,0,0,10"/>
-            <Expander Header="展开保存与恢复说明"><TextBlock x:Name="PermanentGuideText" Style="{StaticResource Small}" Margin="0,10,0,0"/></Expander>
-            <Button x:Name="PermanentGuideButton" Content="打开每次生效指引" Click="PermanentGuideClick" Padding="8,9" Margin="0,12,0,0"/>
-          </StackPanel></Border>
-          <Border Style="{StaticResource Card}" Margin="0,14,0,0"><StackPanel>
-            <TextBlock Text="可恢复的安装" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12"/>
-            <TextBlock Text="官方 HackBGRT 2.6.0 发布包已固定 SHA-256。只安装独立 EFI 文件；本软件核验后将新启动项追加到末尾，不覆盖 Windows 启动器。" Style="{StaticResource Small}"/>
-            <TextBlock Text="若试启动失败：用固件启动菜单选择 Windows Boot Manager，进入 Windows 后恢复原 Logo。保留恢复 U 盘。" Style="{StaticResource Small}" Margin="0,12,0,0"/>
-            <TextBlock Text="Windows 11 / COLORFUL P15 23 已完成实机流程验证，完整说明中包含安装、首次确认与保存默认入口的步骤。其他设备仍需先单次试启动并准备恢复介质。" Style="{StaticResource Small}" Margin="0,12,0,0"/>
-          </StackPanel></Border>
+        <StackPanel Grid.Row="3">
+          <Button Content="完整说明与恢复" Click="GuideClick" Style="{StaticResource NavigationButton}" FontSize="12"/>
+          <Button x:Name="CloseLogoButton" Content="←  返回首页" Click="CloseClick" Style="{StaticResource NavigationButton}" FontSize="12"/>
+          <TextBlock Text="WinBootVideo · 0x3fffff" Style="{StaticResource Small}" Margin="14,18,0,0"/>
         </StackPanel>
       </Grid>
-    </ScrollViewer>
-    <Border Grid.Row="2" Background="White" BorderBrush="#D5DFE8" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,16,0,12">
-      <StackPanel><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-        <TextBlock x:Name="LogoStatus" Text="先选图片、导出准备包，再完成只读检查和恢复确认。" MaxHeight="78" TextTrimming="CharacterEllipsis" Margin="0,0,12,0"/>
-        <Button Grid.Column="1" Content="操作详情" Click="DetailsClick" Padding="10,5" MinHeight="30" VerticalAlignment="Center"/>
-        </Grid>
-        <ProgressBar x:Name="LogoBusy" Height="3" IsIndeterminate="True" Visibility="Collapsed" Margin="0,8,0,0"/>
-      </StackPanel>
     </Border>
-    <StackPanel Grid.Row="3">
-      <Grid Margin="0,0,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-        <TextBlock x:Name="InstallHint" Style="{StaticResource Small}" MaxHeight="58" TextTrimming="CharacterEllipsis" Margin="0,0,12,0"/>
-        <Button Grid.Column="1" Content="查看安装条件" Click="RequirementsClick" Padding="10,5" MinHeight="30" VerticalAlignment="Center"/>
+    <Grid Grid.Column="1" Margin="32,28,32,24">
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+      <Grid Margin="0,0,0,24">
+        <StackPanel><TextBlock x:Name="LogoPageTitle" Text="先检查电脑是否支持" Style="{StaticResource PageTitle}"/><TextBlock x:Name="LogoPageDescription" Text="管理员检查只读取系统和启动信息，不会安装或更改设置。" Style="{StaticResource Small}" Margin="0,8,170,0"/></StackPanel>
+        <Border Background="#EAF0F7" CornerRadius="6" Padding="12,7" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="0,4,0,0"><TextBlock x:Name="LogoBadge" Text="尚未检查" FontSize="12"/></Border>
       </Grid>
-      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-        <Button x:Name="InstallLogoButton" Content="04  安装独立 Logo（UAC）" Style="{StaticResource PrimaryButton}" Click="InstallClick" HorizontalAlignment="Left" IsEnabled="False" ToolTipService.ShowOnDisabled="True"/>
-        <Button x:Name="RestoreLogoButton" Grid.Column="1" Content="恢复原 Logo（UAC）" Click="RestoreClick" IsEnabled="False"/>
+      <ScrollViewer x:Name="LogoScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid>
+          <StackPanel x:Name="CheckPage">
+            <Border Style="{StaticResource Card}" Padding="24">
+              <StackPanel>
+                <TextBlock Text="这项功能会改变什么？" Style="{StaticResource SectionTitle}"/>
+                <TextBlock Text="替换 Windows 加载时的静态 Logo，包括此阶段的厂商 Logo。刚通电时的固件初始画面可能仍短暂出现。" Style="{StaticResource Small}" Margin="0,0,0,20"/>
+                <Border Background="#F5F7FA" Padding="16" CornerRadius="6"><TextBlock x:Name="HardwareText" Text="尚未检查。点击下方按钮后，Windows 会请求管理员授权。" FontSize="13" LineHeight="23"/></Border>
+                <WrapPanel Margin="0,18,0,0"><Button x:Name="ProbeButton" Content="检查电脑（管理员授权）" Style="{StaticResource PrimaryButton}" Click="ProbeClick" Margin="0,0,8,0"/><Button x:Name="FirmwareDetailsButton" Content="查看启动项详情" Click="FirmwareDetailsClick" IsEnabled="False"/></WrapPanel>
+              </StackPanel>
+            </Border>
+            <TextBlock Text="当前支持范围" FontWeight="SemiBold" Margin="2,22,0,8"/>
+            <TextBlock Text="UEFI x64、单 EFI 系统分区、系统盘未加密、单 Windows 启动器。完整核验后的 Insyde USB / 光驱 / 网络入口会保留；其他系统或未知配置停止安装。" Style="{StaticResource Small}" Margin="2,0,0,16"/>
+            <Border Background="#FFF7E7" CornerRadius="8" Padding="18">
+              <StackPanel><TextBlock Text="安装前，请保留现有安全设置" FontWeight="SemiBold" Foreground="#705421"/><TextBlock Text="不需要先关闭 Secure Boot。保持 UEFI、TPM、CSM 和 SATA 设置；不要清空密钥、格式化 EFI 或删除启动项来绕过检查。" Foreground="#705421" FontSize="12" LineHeight="21" Margin="0,8,0,0"/></StackPanel>
+            </Border>
+            <Expander Header="如何进入 BIOS？需要提前准备什么？" Margin="0,20,0,4"><StackPanel Margin="2,12,2,0">
+              <TextBlock Text="准备可启动的 Windows 恢复 U 盘、可用的帐户密码，以及另一设备上的恢复说明。先查电脑官方的 Boot Menu / BIOS 入口。" Style="{StaticResource Small}" Margin="0,0,0,10"/>
+              <TextBlock Text="从 Windows 进入：设置 → 系统 → 恢复 → 高级启动 → 立即重新启动 → 疑难解答 → 高级选项 → UEFI 固件设置。操作前保存工作。" Style="{StaticResource Small}"/>
+            </StackPanel></Expander>
+          </StackPanel>
+          <StackPanel x:Name="ImagePage" Visibility="Collapsed">
+            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="22"/><ColumnDefinition Width="260"/></Grid.ColumnDefinitions>
+              <Border Style="{StaticResource Card}" Padding="20"><StackPanel>
+                <Border Background="Black" Height="200" CornerRadius="8" ClipToBounds="True"><Grid><Image x:Name="LogoPreview" Width="320" Height="180" Stretch="Uniform"/><TextBlock x:Name="PreviewPlaceholder" Text="选择图片后显示预览" Foreground="#A4B6CB" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid></Border>
+                <TextBlock x:Name="ImagePathText" Text="尚未选择图片" Style="{StaticResource Small}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" Margin="0,14,0,16"/>
+                <Button x:Name="ChooseImageButton" Content="选择图片…" Click="ChooseImageClick" HorizontalAlignment="Left"/>
+              </StackPanel></Border>
+              <StackPanel Grid.Column="2">
+                <TextBlock Text="图片要求" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                <TextBlock Text="静态 PNG / JPEG / BMP&#10;最大 16 MB、2000 万像素&#10;透明区域自动铺黑&#10;保留比例，不拉伸" Style="{StaticResource Small}" LineHeight="25"/>
+                <TextBlock Text="输出画布" Style="{StaticResource Label}" Margin="0,20,0,8"/>
+                <ComboBox x:Name="CanvasChoice" SelectedIndex="0" SelectionChanged="CanvasChanged"><ComboBoxItem Content="320 × 180（推荐）"/><ComboBoxItem Content="256 × 256"/><ComboBoxItem Content="400 × 240"/><ComboBoxItem Content="600 × 360"/></ComboBox>
+                <TextBlock Text="自动输出符合要求的 24 位 BMP3。固件分辨率可能低于桌面，预览仅供参考。" Style="{StaticResource Small}" Margin="0,12,0,0"/>
+              </StackPanel>
+            </Grid>
+            <Border Style="{StaticResource Card}" Margin="0,20,0,0"><StackPanel>
+              <TextBlock Text="导出准备包" FontSize="17" FontWeight="SemiBold"/>
+              <TextBlock Text="包含处理后的图片、配置、官方工具和恢复说明。导出不会更改启动设置；软件安装时使用这份已校验的图片。" Style="{StaticResource Small}" Margin="0,8,0,14"/>
+              <Button x:Name="ExportButton" Content="选择目录并导出…" Click="ExportClick" HorizontalAlignment="Left" IsEnabled="False"/>
+              <TextBlock x:Name="PreparedText" Text="尚未导出。建议把恢复说明另存到手机或其他设备。" Style="{StaticResource Small}" Margin="0,12,0,0"/>
+            </StackPanel></Border>
+          </StackPanel>
+          <StackPanel x:Name="InstallPage" Visibility="Collapsed">
+            <Border Style="{StaticResource Card}" Padding="24"><StackPanel>
+              <TextBlock Text="安装前确认" Style="{StaticResource SectionTitle}"/>
+              <TextBlock Text="软件会备份当前 Windows 启动器和固件记录，安装独立的 HackBGRT 文件，创建启动项。Windows Boot Manager 保持默认；安装不会自动重启。" Style="{StaticResource Small}" Margin="0,0,0,18"/>
+              <CheckBox x:Name="RescueCheck" Checked="ConfirmationChanged" Unchecked="ConfirmationChanged"><TextBlock Text="已准备可启动的恢复 U 盘、帐户密码，并将恢复说明保存到另一设备"/></CheckBox>
+              <CheckBox x:Name="TrialCheck" Checked="ConfirmationChanged" Unchecked="ConfirmationChanged"><TextBlock Text="了解先从 Boot Menu 单次试启动，确认能正常登录后，再手动设为默认"/></CheckBox>
+              <CheckBox x:Name="ShimCheck" Checked="ConfirmationChanged" Unchecked="ConfirmationChanged"><TextBlock Text="已阅读 Secure Boot 开启时的首次 shim 哈希确认步骤"/></CheckBox>
+              <Button Content="先阅读首次启动步骤" Click="FirstBootClick" HorizontalAlignment="Left" Margin="0,12,0,0"/>
+            </StackPanel></Border>
+            <Border Background="#FFF7E7" CornerRadius="8" Padding="18" Margin="0,20,0,0"><TextBlock Text="保持恢复介质可用。固件差异、断电和第三方改动的风险无法完全消除；检查不通过时，请保存报告，按原因处理。" Foreground="#705421" FontSize="12" LineHeight="21"/></Border>
+            <StackPanel Margin="2,20,0,0"><TextBlock Text="尚缺哪些条件？" FontWeight="SemiBold"/><TextBlock x:Name="InstallHint" Style="{StaticResource Small}" Margin="0,8,0,12"/><Button Content="查看完整安装条件" Click="RequirementsClick" HorizontalAlignment="Left"/></StackPanel>
+          </StackPanel>
+          <StackPanel x:Name="FinishPage" Visibility="Collapsed">
+            <Border Background="#EDF5EE" CornerRadius="8" Padding="18" Margin="0,0,0,20"><StackPanel><TextBlock x:Name="InstalledHeading" Text="安装与默认启动是两件事" FontSize="16" FontWeight="SemiBold" Foreground="#315D3B"/><TextBlock x:Name="InstalledDescription" Text="安装后 Logo 保存在 EFI。先单次试启动，确认效果和 Windows 登录都正常，再手动保存默认入口。" FontSize="12" Foreground="#315D3B" LineHeight="21" Margin="0,8,0,0"/></StackPanel></Border>
+            <StackPanel x:Name="CompletedPageDetails" Visibility="Collapsed">
+              <Border Style="{StaticResource Card}" Padding="24"><StackPanel>
+                <TextBlock Text="最后确认实际开机效果" FontSize="18" FontWeight="SemiBold"/>
+                <TextBlock Text="只读检查确认了默认顺序，实际显示效果仍需你确认。" Style="{StaticResource Small}" Margin="0,8,0,18"/>
+                <TextBlock Text="1  保存工作，正常重启" FontWeight="SemiBold"/>
+                <TextBlock Text="确认自定义 Logo 显示，且 Windows 可以正常登录。" Style="{StaticResource Small}" Margin="0,7,0,18"/>
+                <TextBlock Text="2  关机后再开机" FontWeight="SemiBold"/>
+                <TextBlock Text="确认普通开机也生效。若出现原 Logo，先重新检查默认入口；无需立即重装。" Style="{StaticResource Small}" Margin="0,7,0,0"/>
+              </StackPanel></Border>
+              <Border Style="{StaticResource Card}" Padding="24" Margin="0,18,0,0"><StackPanel>
+                <TextBlock Text="保留恢复资料，然后关闭软件" FontSize="18" FontWeight="SemiBold"/>
+                <TextBlock Text="Logo 不需要软件常驻。验证成功后可删除原图和导出的准备包；保留 %ProgramData%\\WinBootVideo-BootLogo 中的恢复记录，以及另一设备上的恢复说明。" Style="{StaticResource Small}" Margin="0,8,0,16"/>
+                <Button Content="查看恢复与重新设置步骤" Click="PermanentGuideClick" HorizontalAlignment="Left"/>
+              </StackPanel></Border>
+            </StackPanel>
+            <StackPanel x:Name="FirstSetupReference">
+            <Border Style="{StaticResource Card}" Padding="24"><StackPanel>
+              <TextBlock Text="1  从启动菜单单次选择 HackBGRT" FontSize="17" FontWeight="SemiBold"/>
+              <TextBlock Text="普通重启仍可能走 Windows Boot Manager。请进入固件 Boot Menu / Boot Manager，选择 HackBGRT 试启动。" Style="{StaticResource Small}" Margin="0,8,0,20"/>
+              <TextBlock Text="2  首次安全验证确认" FontSize="17" FontWeight="SemiBold"/>
+              <TextBlock Text="如果出现 Verification failed 蓝色提示：选择 OK 并按 Enter，随后在 5 秒倒计时内按任意键进入 MOKManager。保留 Secure Boot。" Style="{StaticResource Small}" Margin="0,8,0,12"/>
+              <Expander x:Name="FirstBootSteps" Header="展开完整的 7 个步骤" IsExpanded="True"><TextBlock x:Name="FirstBootGuideText" Style="{StaticResource Small}" Margin="0,12,0,0"/></Expander>
+              <Button Content="HackBGRT 官方 shim 指引 ↗" Click="ShimGuideClick" HorizontalAlignment="Left" Margin="0,14,0,0"/>
+            </StackPanel></Border>
+            <Border Style="{StaticResource Card}" Padding="24" Margin="0,18,0,0"><StackPanel>
+              <TextBlock Text="3  让每次开机都生效" FontSize="17" FontWeight="SemiBold"/>
+              <TextBlock Text="试启动成功后，在 BIOS 的 Boot Priority / Boot Order 中把 HackBGRT 放到第一位，保留 Windows Boot Manager，保存退出。再验证重启和关机后开机。" Style="{StaticResource Small}" Margin="0,8,0,12"/>
+              <TextBlock Text="软件提供指引，默认启动顺序由你在 BIOS 中手动设置。无需让本软件常驻，也无需重复安装。" Style="{StaticResource Small}" Margin="0,0,0,12"/>
+              <Expander Header="保存、删除准备包与恢复说明"><TextBlock x:Name="PermanentGuideText" Style="{StaticResource Small}" Margin="0,12,0,0"/></Expander>
+              <Button x:Name="PermanentGuideButton" Content="打开每次生效与恢复指引" Click="PermanentGuideClick" HorizontalAlignment="Left" Margin="0,14,0,0"/>
+            </StackPanel></Border>
+            </StackPanel>
+          </StackPanel>
+        </Grid>
+      </ScrollViewer>
+      <Border Grid.Row="2" Background="White" BorderBrush="#E0E6ED" BorderThickness="1" CornerRadius="8" Padding="14,12" Margin="0,18,0,16">
+        <StackPanel><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <TextBlock x:Name="LogoStatus" Text="先完成只读检查，再准备图片。首次打开不会更改启动设置。" MaxHeight="66" TextTrimming="CharacterEllipsis" Margin="0,0,12,0" FontSize="12"/>
+          <Button Grid.Column="1" Content="操作详情" Click="DetailsClick" Padding="12,5" MinHeight="30" VerticalAlignment="Center"/>
+        </Grid><ProgressBar x:Name="LogoBusy" Height="3" IsIndeterminate="True" Visibility="Collapsed" Margin="0,8,0,0"/></StackPanel>
+      </Border>
+      <Grid Grid.Row="3"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <Button x:Name="LogoBackButton" Content="上一步" Click="BackClick" Margin="0,0,10,0"/>
+        <Button x:Name="RestoreLogoButton" Grid.Column="1" Content="恢复原 Logo（管理员授权）" Click="RestoreClick" IsEnabled="False" HorizontalAlignment="Left" Padding="12,10"/>
+        <StackPanel Grid.Column="2" Orientation="Horizontal">
+          <Button x:Name="InstallLogoButton" Content="安装开机 Logo（管理员授权）" Style="{StaticResource PrimaryButton}" Click="InstallClick" IsEnabled="False" ToolTipService.ShowOnDisabled="True" Visibility="Collapsed"/>
+          <Button x:Name="LogoNextButton" Content="下一步：准备图片  →" Style="{StaticResource PrimaryButton}" Click="NextClick" ToolTipService.ShowOnDisabled="True"/>
+        </StackPanel>
       </Grid>
-    </StackPanel>
+    </Grid>
   </Grid>
 </Window>

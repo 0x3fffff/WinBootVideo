@@ -84,17 +84,20 @@ internal static class BootLogoChecks
         int fileChecks = 0;
         var response = BootLogoInstaller.ProbeFirmware(Environment(), firmware, journal, _ => fileChecks++);
         check(response.Success && response.AlreadyInstalled && response.Message.Contains("已安装") && response.Message.Contains("Windows Boot Manager 仍是默认"), "安装成功后的 Boot0000 不应再次被只读检查报为额外固件项：" + response.Message);
+        check(response.LogoIsDefault == false, "已安装但 Windows 默认时，结构化报告不能误报每次开机已生效");
         check(fileChecks == 1 && response.Environment!.FirmwareDetails.Contains("已安装并核验"), "已有安装只读检查确实执行文件验证并在详情标明记录归属");
         check(firmware.Writes.Count == 0, "安装后状态检查不能写入固件");
         var roundTrip = System.Text.Json.JsonSerializer.Deserialize<BootLogoResponse>(System.Text.Json.JsonSerializer.Serialize(response, Settings.JsonOptions), Settings.JsonOptions)!;
-        check(roundTrip.Success && roundTrip.AlreadyInstalled, "辅助报告 JSON 往返保留已安装状态");
+        check(roundTrip.Success && roundTrip.AlreadyInstalled && roundTrip.LogoIsDefault == false, "辅助报告 JSON 往返保留已安装及默认入口状态");
         var savedOrder = firmware.Read("BootOrder")!;
         firmware.Values["BootCurrent"] = new(6, BitConverter.GetBytes(plan.Number));
         response = BootLogoInstaller.ProbeFirmware(Environment(), firmware, journal, _ => { });
         check(response.Success && response.AlreadyInstalled, "通过 Logo 单次试启动进入 Windows 后可以检查已有安装");
+        check(response.LogoIsDefault == false, "本次单次选择 HackBGRT 不等于已设置默认启动顺序");
         firmware.Values["BootOrder"] = new(7, new ushort[] { plan.Number, 2, 0x2001, 0x2002, 0x2003 }.SelectMany(BitConverter.GetBytes).ToArray());
         response = BootLogoInstaller.ProbeFirmware(Environment(), firmware, journal, _ => { });
         check(response.Success && response.Message.Contains("HackBGRT 当前为默认"), "用户手动设置 Logo 为默认后仍准确显示已安装，而非要求默认 Windows");
+        check(response.LogoIsDefault == true && firmware.Writes.Count == 0, "根据核验后的 BootOrder 返回默认状态，整个查询没有固件写入");
         firmware.Values["BootOrder"] = savedOrder;
         firmware.Values["BootCurrent"] = new(6, BitConverter.GetBytes((ushort)2));
         firmware.Values["BootNext"] = new(7, BitConverter.GetBytes(plan.Number));
@@ -103,7 +106,7 @@ internal static class BootLogoChecks
         void MustReject(string reason, Action change, Action reset)
         {
             change();
-            try { var result = BootLogoInstaller.ProbeFirmware(Environment(), firmware, journal, _ => { }); check(!result.Success && !result.AlreadyInstalled, reason); }
+            try { var result = BootLogoInstaller.ProbeFirmware(Environment(), firmware, journal, _ => { }); check(!result.Success && !result.AlreadyInstalled && result.LogoIsDefault == null, reason); }
             finally { reset(); }
         }
         var own = firmware.Read("Boot0000")!;
@@ -340,14 +343,16 @@ internal static class BootLogoChecks
                 var source = BitmapSource.Create(80, 40, 96, 96, PixelFormats.Bgra32, null, rgba, 80 * 4);
                 string input = Path.Combine(work, "半透明 Logo.png"); var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(source));
                 using (var file = File.Create(input)) png.Save(file);
-                int probeCount = 0, installCount = 0, restoreCount = 0; bool rejectedProbe = false, staleProbe = false, installedRecord = false;
+                int probeCount = 0, installCount = 0, restoreCount = 0; bool rejectedProbe = false, staleProbe = false, installedRecord = false, defaultLogo = false;
                 var window = new BootLogoWindow(new AppPaths(Path.Combine(work, "data")), request =>
                 {
-                    if (request.Action == "install") { installCount++; installedRecord = true; return Task.FromResult(new BootLogoResponse { Success = true, AlreadyInstalled = true, Message = "模拟安装完成" }); }
+                    if (request.Action == "install") { installCount++; installedRecord = true; return Task.FromResult(new BootLogoResponse { Success = true, AlreadyInstalled = true, LogoIsDefault = false, Message = "模拟安装完成" }); }
                     if (request.Action == "restore") { restoreCount++; installedRecord = false; return Task.FromResult(new BootLogoResponse { Success = true, Message = "模拟恢复完成" }); }
                     probeCount++;
                     return Task.FromResult(new BootLogoResponse { Success = probeCount > 1 && !rejectedProbe, AlreadyInstalled = installedRecord,
-                        Message = installedRecord ? "已安装并核验本软件的 Boot0000。Windows Boot Manager 仍是默认；请单次选择 HackBGRT 试启动。" : probeCount > 1 ? "模拟检查通过" : "模拟未知加密",
+                        LogoIsDefault = installedRecord ? defaultLogo : null,
+                        Message = installedRecord ? defaultLogo ? "已安装并核验本软件的 Boot0000。HackBGRT 当前为默认启动项；无需重复安装。" :
+                            "已安装并核验本软件的 Boot0000。Windows Boot Manager 仍是默认；请单次选择 HackBGRT 试启动。" : probeCount > 1 ? "模拟检查通过" : "模拟未知加密",
                         Environment = new BootLogoEnvironment { Administrator = true, Uefi = true, X64 = true, SecureBoot = true,
                             OsFullyDecrypted = probeCount > 1 ? true : null, EspCount = 1, EspOnOsDisk = true, EspVolume = Volume,
                             EspPartitionGuid = Partition.ToString(), EspFreeBytes = 64L * 1024 * 1024,
@@ -364,9 +369,15 @@ internal static class BootLogoChecks
                     try
                     {
                         check(!install.IsEnabled && !export.IsEnabled, "GUI 初次打开不启用安装与导出");
+                        check(((FrameworkElement)window.FindName("CheckPage")).IsVisible &&
+                            !((Button)window.FindName("LogoNextButton")).IsEnabled,
+                            "Logo 向导从只读检查开始，检查前不能使用下一步");
                         var hint = window.FindName("InstallHint") as TextBlock;
                         check(hint != null && hint.Text.Contains("选择图片") && hint.Text.Contains("只读检查"), "GUI 安装按钮禁用时直接列出缺少的步骤，不让用户猜原因");
                         window.SelectImage(input); check(export.IsEnabled && !install.IsEnabled, "GUI 选图后可导出，仍不能安装");
+                        check(((FrameworkElement)window.FindName("ImagePage")).IsVisible &&
+                            !((Button)window.FindName("LogoNextButton")).IsEnabled,
+                            "选择图片进入素材页，尚未导出准备包时不能继续安装");
                         byte[] bmp = BootLogoImage.Convert(input); var size = BootLogoImage.Validate(bmp);
                         check(size == (320, 180) && bmp[54] == 0, "实际 WPF 转换生成推荐画布、黑边与 BMP3");
                         int center = 54 + (90 * 960) + 160 * 3;
@@ -385,10 +396,14 @@ internal static class BootLogoChecks
                         check(File.Exists(Path.Combine(prepare, "splash.bmp")) && File.Exists(Path.Combine(prepare, "shim-signed", "COPYRIGHT")) &&
                             File.ReadAllText(Path.Combine(prepare, "config.txt")) == BootLogoPackage.Config, "实际 GUI 导出内置官方包、自定义图片、固定配置与 shim 版权");
                         File.Delete(input); check(File.Exists(Path.Combine(prepare, "splash.bmp")), "删除原始图片不影响准备包");
+                        ((Button)window.FindName("LogoNextButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        check(((FrameworkElement)window.FindName("InstallPage")).IsVisible && !install.IsEnabled,
+                            "导出准备包后进入确认页，向导导航不绕过硬件检查");
                         rescue.IsChecked = trial.IsChecked = shim.IsChecked = true;
                         probe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); check(!install.IsEnabled && probeCount == 1, "实际检查按钮收到未知加密时阻止安装");
                         check(hint!.Text.Contains("加密状态未知"), "GUI 安装按钮旁显示硬件检查的具体阻止原因");
                         probe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); check(install.IsEnabled && probeCount == 2, "实际检查与确认全部通过后安装按钮可点");
+                        check(install.IsVisible, "通过所有检查后，安装按钮在确认页实际可见");
                         check(((Button)window.FindName("FirmwareDetailsButton")).IsEnabled, "收到启动项只读报告后详情按钮可点");
                         shim.IsChecked = false; check(!install.IsEnabled && hint.Text.Contains("第三项确认"), "Secure Boot 未确认 shim 步骤时提示缺少第三项"); shim.IsChecked = true;
                         rescue.IsChecked = false; check(!install.IsEnabled && hint.Text.Contains("第一项确认"), "撤销恢复介质确认后提示缺少第一项"); rescue.IsChecked = true;
@@ -400,23 +415,38 @@ internal static class BootLogoChecks
                         probe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); check(install.IsEnabled, "重新通过检查后恢复可安装状态");
                         install.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                         check(installCount == 1 && !install.IsEnabled && ((TextBlock)window.FindName("LogoStatus")).Text == "模拟安装完成" && hint.Text.Contains("已安装") && !hint.Text.Contains("暂不能安装"), "实际 GUI 安装成功后明确已安装，不再提示缺少只读检查；执行器全部为模拟");
+                        check(((FrameworkElement)window.FindName("FinishPage")).IsVisible && !install.IsVisible &&
+                            ((TextBlock)window.FindName("InstalledHeading")).Text.Contains("无需重复安装"),
+                            "安装成功自动进入首次启动指引，隐藏重复安装入口");
                         probe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                         var restore = (Button)window.FindName("RestoreLogoButton");
                         check(!install.IsEnabled && restore.IsEnabled && hint.Text.Contains("无需重复安装"), "安装后重新检查显示已安装并保留恢复入口，不鼓励重复安装");
+                        check(((TextBlock)window.FindName("LogoBadge")).Text.Contains("尚未设为默认"),
+                            "安装完成仍保持 Windows 默认时，GUI 明确说明尚未设为默认");
+                        defaultLogo = true; probe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        check(((TextBlock)window.FindName("LogoBadge")).Text.Contains("已设为默认") &&
+                            ((TextBlock)window.FindName("LogoPageTitle")).Text.Contains("已保存"),
+                            "只读确认默认入口已保存后，GUI 显示完成状态，不要求重复执行首次安装");
+                        check(((FrameworkElement)window.FindName("CompletedPageDetails")).Visibility == Visibility.Visible &&
+                            ((FrameworkElement)window.FindName("FirstSetupReference")).Visibility == Visibility.Collapsed,
+                            "默认入口核验成功后显示实际启动验收与恢复资料，避免让已完成用户重复执行首次安装步骤");
                         install.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                         check(installCount == 1, "已安装状态即使触发安装事件也不会再次执行安装");
                         rejectedProbe = true; probe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                         check(!install.IsEnabled && hint.Text.Contains("只读检查未通过"), "失败报告即使包含 AlreadyInstalled 也不能被当成核验成功");
+                        check(!((TextBlock)window.FindName("LogoBadge")).Text.Contains("已设为默认"),
+                            "失败报告即使声称默认已设置，GUI 也不展示核验成功");
                         rejectedProbe = false; probe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                         if (installedScreenshot != null)
                         {
-                            ((ScrollViewer)window.FindName("LogoScroll")).ScrollToBottom();
+                            window.Width = 1000; window.Height = 800;
+                            ((ScrollViewer)window.FindName("LogoScroll")).ScrollToTop();
                             window.UpdateLayout(); Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
                             var root = (FrameworkElement)window.Content;
-                            root.Measure(new Size(1000, 740)); root.Arrange(new Rect(0, 0, 1000, 740)); root.UpdateLayout();
-                            var capture = new RenderTargetBitmap(1000, 740, 96, 96, PixelFormats.Pbgra32);
+                            int width = (int)Math.Ceiling(root.ActualWidth), height = (int)Math.Ceiling(root.ActualHeight);
+                            var capture = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
                             var background = new DrawingVisual();
-                            using (var drawing = background.RenderOpen()) drawing.DrawRectangle(window.Background, null, new Rect(0, 0, 1000, 740));
+                            using (var drawing = background.RenderOpen()) drawing.DrawRectangle(window.Background, null, new Rect(0, 0, width, height));
                             capture.Render(background);
                             capture.Render(root); var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(capture));
                             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(installedScreenshot))!);
