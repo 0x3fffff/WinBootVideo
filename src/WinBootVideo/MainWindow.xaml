@@ -1,4 +1,4 @@
-<Window x:Class="WinBootVideo.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="WinBootVideo · 登录动画 (0.2.5)" Width="1100" Height="810" MinWidth="1000" MinHeight="740" WindowStartupLocation="CenterScreen" Background="#F5F7FA" AllowDrop="True" Drop="OnDrop" DragOver="OnDragOver">
+<Window x:Class="WinBootVideo.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="WinBootVideo · 登录动画 (0.2.6)" Width="1100" Height="810" MinWidth="1000" MinHeight="740" WindowStartupLocation="CenterScreen" Background="#F5F7FA" AllowDrop="True" Drop="OnDrop" DragOver="OnDragOver">
   <Grid Background="#F5F7FA">
     <Grid.ColumnDefinitions><ColumnDefinition Width="184"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
     <Border Background="#ECF1F7" BorderBrush="#DFE5ED" BorderThickness="0,0,1,0">
@@ -15,7 +15,7 @@
         </StackPanel>
         <StackPanel Grid.Row="3">
           <TextBlock Text="WINDOWS 11" FontSize="11" FontWeight="SemiBold" Foreground="#657487"/>
-          <TextBlock Text="个人使用初版 0.2.5" Style="{StaticResource Small}" Margin="0,4,0,16"/>
+          <TextBlock Text="个人使用初版 0.2.6" Style="{StaticResource Small}" Margin="0,4,0,16"/>
           <Button Content="视频要求与恢复说明" Click="HelpClick" Padding="8,9" FontSize="11"/>
         </StackPanel>
       </Grid>

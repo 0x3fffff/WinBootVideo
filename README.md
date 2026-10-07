@@ -1,12 +1,27 @@
-# WinBootVideo 0.2.5
+# WinBootVideo 0.2.6
 
 Windows 11 的**登录后动画**工具。完成密码 / PIN / 图片密码验证、登录画面退场后，显示全屏视频，再淡出到桌面。0.1.6 采用桌面前模式：视频呈现后才允许本宿主启动 Explorer，覆盖层保持到动画淡出；不使用桌面出现后再播放的备用入口。每次登录播放一次，锁屏解锁不重复；注销后重新登录会再播放。
 
 这一版用 C# / WPF 编写，提供中文浅色 GUI，可选视频、检查、转码、预览、启用和恢复。初次运行不会更改登录配置。新增独立的“开机 Logo”向导，使用固定版本 HackBGRT 更换 UEFI 启动 Windows 时的静态 BGRT 图片；不刷主板固件，不替换 Windows 转圈动画或锁屏画面。
 
-## 开机 Logo（0.2.5）
+## 开机 Logo（0.2.6）
 
 在左侧点击“开机 Logo”，按“选图 → 导出准备包 → 管理员只读检查 → 恢复确认 → 安装”操作。登录视频与开机 Logo 的启用和恢复分别管理。普通界面和登录播放器继续使用普通权限；Logo 的检查、安装和恢复在单独辅助进程中申请 UAC。
+
+### 已验证的完整流程
+
+2026-10-07，Windows 11 x64 / COLORFUL P15 23 / Insyde UEFI 的实机使用反馈确认以下流程跑通。测试机保持 Secure Boot 开启，系统盘未加密，只有一个 EFI 系统分区。
+
+1. **准备图片和恢复资料。** 选择静态图片，使用软件转换为 BMP3；导出准备包。备好恢复 U 盘、帐户密码及另一设备上的恢复说明。
+2. **检查与安装。** 点击“管理员只读检查”，通过后完成确认并安装。看到“安装并读回核验完成”表示文件及独立启动项已安装；此时 Windows Boot Manager 仍为默认，普通重启不一定显示新 Logo。
+3. **单次试启动。** 进入固件 Boot Manager / Boot Menu，选择 HackBGRT；不要重复安装。
+4. **首次安全验证。** 出现 `Verification failed` 蓝色提示时，选 `OK` 并按 Enter；随后在 5 秒倒计时内按任意键进入 MOKManager。
+5. **信任文件哈希。** 选择 `Enroll hash from disk`，进入系统盘的 `EFI → HackBGRT → grubx64.efi`，选择 `Continue → Yes → Reboot`。保留 Secure Boot，不选择信任整张证书的方式。
+6. **确认效果。** 重启后再次单次选择 HackBGRT，确认自定义 Logo 显示且能正常登录 Windows。
+7. **保存默认入口。** 在 BIOS 的 `Boot Priority / Boot Order` 中将 HackBGRT 放到第一位，保留 Windows Boot Manager，并按固件界面提示保存退出。以后普通启动使用 HackBGRT；软件提供指引，默认入口由用户手动设置。
+8. **保留恢复能力。** Logo 已存入 EFI，无需本软件常驻，也无需重新安装。试启动成功后可删除原图和导出的准备包，保留 `%ProgramData%\WinBootVideo-BootLogo` 恢复资料。需要还原时，把 Windows Boot Manager 调回第一位，再进入 Windows 使用“恢复原 Logo”。
+
+这是一台实机的使用反馈；其他固件、加密磁盘、多系统、固件更新和游戏反作弊兼容性仍有各自的验证边界。更换固件默认设置后如出现原 Logo，先检查默认启动入口。
 
 ### 安装前需要准备什么
 
@@ -58,7 +73,7 @@ EFI 分区必须有至少 20 MB 可用空间。空间不足或读不到时停止
 
 试启动失败时，从固件启动菜单选择 Windows Boot Manager，进入 Windows 后点击“恢复原 Logo”。软件核实受保护的记录与当前项，只移除自己的 BootOrder 引用及独立项；保留 EFI Logo 文件，避免残留固件引用变为悬空文件路径。后续可凭相同恢复记录和文件哈希重新准备安装。外来项、文件变化、Windows 启动器变化或损坏记录会停止自动操作，不能拿旧备份覆盖当前 Windows。恢复记录与文件都仍可查阅。
 
-**此功能没有真实或虚拟 UEFI 首次启动验收，不能宣称所有固件兼容或绝无启动风险。** 自动检查覆盖模拟固件事务、失败撤销、BMP 字节与像素、GUI 按钮、辅助 CLI 拒绝路径，以及官方安装器在临时模拟 ESP 中的实际文件复制。开发过程中不改真实 EFI、NVRAM、BCD、Secure Boot、TPM 或加密设置，也不重启电脑。详细证据和限制见 [QA.md](QA.md) 与 [Logo 技术记录](research/boot-logo-integration.md)。
+**已收到上述实机流程跑通的反馈；尚不能宣称所有固件兼容或绝无启动风险。** 自动检查覆盖模拟固件事务、失败撤销、BMP 字节与像素、GUI 按钮、辅助 CLI 拒绝路径，以及官方安装器在临时模拟 ESP 中的实际文件复制。开发过程中不改真实 EFI、NVRAM、BCD、Secure Boot、TPM 或加密设置，也不重启电脑。详细证据和限制见 [QA.md](QA.md) 与 [Logo 技术记录](research/boot-logo-integration.md)。
 
 0.1.2 修复视频在不可见桌面上提前播放、登录后只能看到结尾的问题：窗口渲染后先等待自己的桌面成为输入桌面，再从第 0 秒开始播放。输入图片密码或等待登录画面的时间不消耗视频加载与播放预算。新增实际非输入桌面回归及等待后从零播放验证，保留 0.1.1 的保存预览修复。未成功预览时“启用登录动画”保持不可用。
 
@@ -167,7 +182,7 @@ Windows 11 Home / Pro 的个人桌面采用这一用户级方案；企业策略�
 ```powershell
 ./build.ps1
 ./build.ps1 -Test
-./verify.ps1 -FFmpegDirectory "E:\项目\ffmpeg\bin"
+./verify.ps1 -FFmpegDirectory "C:\Tools\ffmpeg\bin"
 # 仅需分发 ZIP 时执行；仍然使用固定文件名，不创建版本文件夹。
 ./build.ps1 -Package
 ```
@@ -194,9 +209,9 @@ Windows 11 Home / Pro 的个人桌面采用这一用户级方案；企业策略�
 开发 / 检查可指定独立数据目录，不影响默认个人配置：
 
 ```powershell
-.\artifacts\WinBootVideo\WinBootVideo.exe --data-dir "E:\Project\WinBootVideo\.runtime\dev"
+.\artifacts\WinBootVideo\WinBootVideo.exe --data-dir ".\.runtime\dev"
 New-Item -ItemType Directory -Path .\artifacts\screenshots -Force
-.\artifacts\WinBootVideo\WinBootVideo.exe --render-ui "E:\Project\WinBootVideo\artifacts\screenshots\gui-preview.png" --data-dir "E:\Project\WinBootVideo\.runtime\ui-check"
+.\artifacts\WinBootVideo\WinBootVideo.exe --render-ui ".\artifacts\screenshots\gui-preview.png" --data-dir ".\.runtime\ui-check"
 ```
 
 独立诊断入口 `dotnet run --project tests/WinBootVideo.Checks.csproj -c Release -- --login-wait-only` 重放已观察到的十五分钟登录桌面等待超时，使用虚拟时钟、不更改系统。当前版本仍预期失败，表示问题尚未修复；它不属于正常构建和验证的通过检查。日志不能单独确认用户认证时刻，后续二十分钟登录转换是合成测试情形。

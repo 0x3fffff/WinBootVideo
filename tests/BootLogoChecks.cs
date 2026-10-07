@@ -12,7 +12,7 @@ using WinBootVideo.Core;
 internal static class BootLogoChecks
 {
     internal static readonly Guid Partition = Guid.Parse("47e0bbda-3d49-4867-a77f-cfded94a5a27");
-    internal const string Volume = @"\\?\Volume{798e970d-122d-4383-9f97-3fd683c6acd9}\";
+    internal const string Volume = @"\\?\Volume{815f3edb-52ce-4ced-a97e-04d7291a733a}\";
     public static byte[] WindowsEntry()
     {
         byte[] hd = new byte[42]; hd[0] = 4; hd[1] = 1; hd[2] = 42; hd[4] = 1;

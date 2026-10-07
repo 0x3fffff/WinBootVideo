@@ -66,7 +66,7 @@
             <TextBlock Text="可恢复的安装" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12"/>
             <TextBlock Text="官方 HackBGRT 2.6.0 发布包已固定 SHA-256。只安装独立 EFI 文件；本软件核验后将新启动项追加到末尾，不覆盖 Windows 启动器。" Style="{StaticResource Small}"/>
             <TextBlock Text="若试启动失败：用固件启动菜单选择 Windows Boot Manager，进入 Windows 后恢复原 Logo。保留恢复 U 盘。" Style="{StaticResource Small}" Margin="0,12,0,0"/>
-            <TextBlock Text="固件差异与断电风险无法完全消除。此初版尚无真实 / 虚拟 UEFI 首次启动验收，必须先单次试启动。" Style="{StaticResource Small}" Margin="0,12,0,0"/>
+            <TextBlock Text="Windows 11 / COLORFUL P15 23 已完成实机流程验证，完整说明中包含安装、首次确认与保存默认入口的步骤。其他设备仍需先单次试启动并准备恢复介质。" Style="{StaticResource Small}" Margin="0,12,0,0"/>
           </StackPanel></Border>
         </StackPanel>
       </Grid>

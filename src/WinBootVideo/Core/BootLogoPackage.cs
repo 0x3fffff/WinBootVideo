@@ -101,12 +101,20 @@ Logo 文件已保存在 EFI 分区，不需要每次重新安装，也不需要�
 安装成功且试启动验证后，可以删除原图片和导出的准备包。保留 C:\ProgramData\WinBootVideo-BootLogo 的恢复资料及另一设备上的恢复说明。
 需要恢复原效果时，先把 Windows Boot Manager 调回第一位，再进入 Windows 使用本软件的“恢复原 Logo”。
 """;
+    public const string VerifiedFlow = """
+已验证环境：Windows 11 x64、COLORFUL P15 23、Insyde UEFI、Secure Boot 开启、系统盘未加密、单 EFI 系统分区。
+实机使用反馈已确认以下流程跑通：选图与转换 → 导出准备包 → 管理员只读检查 → 安装独立项 → 单次选择 HackBGRT → 完成首次文件哈希确认 → 看到自定义 Logo → 正常进入 Windows → 将 HackBGRT 设为默认入口并保存。
+其他型号和固件仍需按本说明先单次试启动；这一结果不代表多系统、加密磁盘或所有反作弊软件的兼容性。
+""";
     public static string Guide => $$"""
 WinBootVideo 开机 Logo · HackBGRT 2.6.0
 
 改变的是 UEFI 启动 Windows 时的静态 BGRT Logo。主板通电后最早的厂商 Logo 可能仍短暂出现。它与登录后视频是两个独立功能。
 Windows 加载阶段即使显示的是七彩虹等厂商 Logo，也可以由 HackBGRT 替换。刚按电源就出现的固件图片不属于本功能；本软件不刷写或修改 BIOS 来彻底替换第一张图片。
 软件不能保证所有固件兼容，更不能保证启动风险为零。请先准备 Windows 恢复 U 盘，并确认知道如何打开主板启动菜单。
+
+已验证的安装流程：
+{{VerifiedFlow}}
 
 安装前准备：
 1. 保持电脑现有 UEFI、Secure Boot、TPM、CSM 和 SATA 设置。本功能不要求预先关闭安全启动，也不要求手动挂载 EFI 分区或分配盘符。
@@ -152,6 +160,6 @@ BitLocker / 设备加密会因启动链变化进入恢复，初版不支持加�
 官方 Secure Boot 指引：https://github.com/Metabolix/HackBGRT/blob/v2.6.0/shim.md
 BitLocker 恢复说明：https://learn.microsoft.com/windows/security/operating-system-security/data-protection/bitlocker/recovery-overview
 微软固件入口说明：https://support.microsoft.com/en-us/windows/security/devicesecurity/windows-11-and-secure-boot
-HackBGRT MIT 许可证、GNU-EFI 说明与 shim 版权均保留在准备包中。此版本无虚拟机/真实固件首次启动验收记录，第一次必须用启动菜单单次试启动。
+HackBGRT MIT 许可证、GNU-EFI 说明与 shim 版权均保留在准备包中。已验证的实机流程不代替其他设备的首次试启动或恢复准备。
 """;
 }

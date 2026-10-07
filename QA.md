@@ -1,211 +1,56 @@
-# 初版验证记录
+# 验证记录
 
-验证日期：2026-10-05。环境：Windows 11 Home China / 25H2（26200.9168），x64 .NET 8 SDK 8.0.422 / WindowsDesktop 8.0.28。自动播放验证全部使用 `--preview`，没有注销、重启或切换用户输入桌面。真实安装和登录配置的变更另行记录，不属于模拟注册表验证。
+版本：0.2.6。日期：2026-10-07。构建环境：Windows 11 x64，.NET 8 SDK 8.0.422 / WindowsDesktop 8.0.28，.NET Framework 4.8。
 
-## 0.2.5 首次安全验证与每次生效指引（2026-10-07）
+## 实机 Logo 流程
 
-用户反馈：按首次 shim 文件哈希确认步骤后，单次选择 HackBGRT 已看到自定义 Logo。此为用户本机的实际试启动反馈，不等同于跨设备、默认顺序长期保持、更新或断电条件验收。用户请求将按键步骤写进软件，并询问每次开机如何生效。
+实机使用反馈已确认 Windows 11 / COLORFUL P15 23 / Insyde UEFI 上的开机 Logo 流程跑通。环境为 Secure Boot 开启、系统盘未加密、单 EFI 系统分区。
 
-GUI 增加首次安全验证的七步展开说明（OK / Enter、5 秒倒计时、MOKManager、文件哈希确认及重启后再次选择 HackBGRT），以及每次开机生效的说明卡片和独立指引按钮。首次步骤与完整导出指南复用同一份文字。说明明确：文件已经保存在 EFI，无需软件常驻；试启动与登录确认正常后，由用户在 BIOS 的 Boot Priority / Boot Order 中把 HackBGRT 放在第一位，保留 Windows Boot Manager，保存退出；软件指引按钮仅显示说明。没有新增固件、默认顺序、MOK 或安全设置的写入功能。
+- 软件选图、BMP3 转换、准备包导出、管理员检查和独立项安装完成。
+- 固件启动菜单单次选择 HackBGRT，首次出现安全验证提示。
+- 按 OK / Enter，在 5 秒倒计时内进入 MOKManager，确认 EFI/HackBGRT/grubx64.efi 的文件哈希后重启。
+- 再次选择 HackBGRT，确认自定义 Logo 和 Windows 登录正常。
+- 将 HackBGRT 设为默认入口并保存，完成每次启动生效的设置流程。
 
-固定目录 `artifacts/WinBootVideo` 已发布 0.2.5.0。`build.ps1 -Test` 通过 **125 项**；既有 `--boot-logo-only artifacts/fixtures/OfficialLogoFiles.exe artifacts/WinBootVideo artifacts/screenshots/logo-guides-bottom.png` 通过 **476 项**。日志为 `artifacts/logs/build.txt` 和 `artifacts/logs/boot-logo-checks.txt`。默认顶部和安装后底部截图 `artifacts/screenshots/logo-guides-top.png`、`logo-guides-bottom.png` 已查看，说明、展开入口及每次生效指引按钮可读。此改动为文案和说明入口，未新增镜像实现的测试；沿用原有 GUI、导出和隔离保护回归。
+以上是使用者本机的操作反馈，软件未自动执行固件默认顺序或 MOK 确认。不能据此推断其他固件、加密磁盘、多系统、所有反作弊软件或固件更新后的兼容性。
 
-已更新既有个人应用目录至 0.2.5.0，六个运行文件 SHA-256 与固定发布目录一致；旧程序保留于 `app-backup-0.2.4.0-20261007-024548`。设置、Shell / 登录任务备份、登录标记、HKCU Shell 文本及 ProgramData Logo 恢复资料的全部文件哈希 / 数量保持不变。未重新安装或恢复 Logo，没有自动重启、UAC、EFI / NVRAM / BCD 或安全设置变更。
+## 自动检查
 
-## 0.2.4 安装后的自身 Logo 启动项识别（2026-10-07）
+| 检查 | 最近通过结果 | 验证范围 |
+| --- | --- | --- |
+| build.ps1 -Test | 125 项 | 登录宿主策略、首帧交接、设置复制、命令行、备份和任务迁移 |
+| Logo 隔离回归 | 476 项 | EFI 数据解析、文件校验、模拟注册与恢复、故障撤销、WPF GUI、辅助 CLI 拒绝路径 |
+| 官方安装器夹具 | 包含在 Logo 回归中 | 固定 HackBGRT 2.6.0 的实际路径初始化与文件复制，只使用普通临时目录 |
 
-用户安装成功后的只读检查把 `Boot0000: HackBGRT` / `\EFI\HackBGRT\loader.efi` 报为不支持的额外项。只读查看已保存的 current.json，Phase 为 Installed、LogoNumber 为 0、WindowsNumber 为 2、文件校验记录有六项；未调用实时固件 API。旧检查始终调用首次安装 Prepare，忽略自身恢复记录。`dotnet run --project tests/WinBootVideo.Checks.csproj -c Release --no-restore -- --installed-logo-only` 在模拟相同安装 → JSON 记录往返 → 再检查路径中捕获同一错误，红日志为 `artifacts/logs/installed-logo-red.txt`。
-
-修复将首次安装和已有安装的只读核验分开。已有安装须匹配受保护记录、当前分区、完整固件项数据及属性、原 Windows 项、已保存 Insyde 设备项、六文件哈希及 Windows 文件 / 恢复备份；记录副本及普通用户只读权限也校验。只有核验成功才返回 AlreadyInstalled；GUI 显示“已安装，无需重复安装”，保留恢复入口，安装事件不会重复执行。单次从 Logo 启动或用户手动将它设为默认可正确报告；无记录、未知 / Restored / Failed 记录、记录或启动项变化、额外未知项、BootNext 异常和文件验证失败均停止。首次安装的严格规则和现有写入 / 恢复事务未放宽。
-
-固定发布目录 0.2.4.0 最终执行 `--boot-logo-only artifacts/fixtures/OfficialLogoFiles.exe artifacts/WinBootVideo artifacts/screenshots/logo-installed-ui.png`，**476 项通过**（`artifacts/logs/boot-logo-checks.txt`）；包含新增 26 项已有安装重放与权限检查、6 项 GUI 状态检查及 4 项官方临时文件 / 备份损坏检查。`build.ps1 -Test` **125 项通过**（`artifacts/logs/build.txt`）。GUI 截图 `artifacts/screenshots/logo-installed-ui.png` 已查看，提示、禁用安装和可用恢复入口可读。实际 GUI 的安装、恢复与检查执行器全部为模拟；官方文件只复制到普通临时模拟 ESP。
-
-已保存的真实恢复目录及文件只读核对：目录 / current.json / recovery.json / Windows 备份均由 Administrators 拥有，Users 只有 ReadAndExecute；两份记录哈希一致，Windows 备份匹配记录。未为测试调整其 ACL，未执行真实 Logo 安装 / 恢复、EFI / NVRAM / BCD 写入、UAC 或重启；实际首次试启动仍需用户验证。
-
-已更新既有个人应用目录为 0.2.4.0；六个运行文件 SHA-256 与固定发布目录相同。旧应用保留于 `app-backup-0.2.3.0-20261007-014301`；用户设置、Shell / 登录任务原备份、登录标记及 HKCU Shell 文本保持不变，ProgramData Logo 恢复目录全部文件哈希和文件数量保持不变。现有 Installed Logo 记录没有被重新安装或恢复。
-
-## 0.2.3 官方安装器卷 GUID 路径兼容（2026-10-07）
-
-用户实际安装失败于官方 `InitEspPath → Esp.TryPath`，提示 “The ESP path doesn't look like an EFI System Partition.”。只读恢复记录为 Restored、InstalledFiles 为空，保存原始错误和恢复资料；这不是安装成功记录。此前直接调用 InstallFiles 的夹具没有覆盖初始化路径。
-
-反馈入口：`dotnet run --project tests/WinBootVideo.Checks.csproj -c Release --no-restore -- --official-esp-only artifacts/fixtures/OfficialLogoFiles.exe`。同一个普通临时 EFI 目录用普通路径通过、卷 GUID 路径失败，捕获与用户完全相同的错误；原始红日志为 `artifacts/logs/official-esp-red.txt`。为官方安装器加入固定的程序本地路径兼容配置后，官方实际 InitEspPath 与 InstallFiles 均可使用卷 GUID 别名；移除配置再次失败，无 EFI 目录仍拒绝。配置只对安装器生效，不改 Windows 注册表，不挂载 ESP，不修改 BIOS / Secure Boot / TPM。
-
-最终 `--boot-logo-only artifacts/fixtures/OfficialLogoFiles.exe artifacts/WinBootVideo` 通过 **440 项隔离检查**，含新增 8 项真实官方路径 / 文件复制检查与原有模拟固件保护、GUI、失败撤销和普通权限辅助 CLI 拒绝检查。快速逻辑检查 **125 项通过**。日志为 `artifacts/logs/boot-logo-checks.txt`、`artifacts/logs/logic-checks.txt`。安装前说明已同步到 GUI、README 和导出的恢复说明；界面已渲染并检查，截图为 `artifacts/screenshots/logo-ui.png`。没有执行真实 Logo 安装、固件写入或重启；真实 EFI 安装和首次启动仍需用户验证。登录动画十五分钟等待问题未在此次修改。
-固定发布目录 `artifacts/WinBootVideo` 的最终程序为 0.2.3.0，上述 440 项检查已对该目录重新执行通过，`build.ps1 -Test` 也通过 125 项快速逻辑检查（`artifacts/logs/build.txt`）。用户关闭旧窗口后，已更新既有个人应用目录；六个运行文件逐一核对 SHA-256 与固定发布目录一致。旧程序保留于 `app-backup-0.2.2.0-20261007-005853`；用户设置、Shell / 登录任务备份、登录标记、HKCU Shell 原文本及 ProgramData Logo 恢复目录全部文件哈希与文件数量保持不变。未执行真实 Logo 安装或改变固件配置。
-
-## 构建输出整理与待修诊断（2026-10-06）
-
-开发输出统一为 `artifacts/WinBootVideo`；普通构建不生成 ZIP，显式 `build.ps1 -Package` 才更新 `artifacts/WinBootVideo.zip`。旧版开发包目录和 ZIP 已清理，验证日志迁入 `artifacts/logs`、截图迁入 `artifacts/screenshots`、夹具迁入 `artifacts/fixtures`。下文版本目录名称是当时执行记录，不能据此继续使用旧 `-OutputDirectory` 参数。
-
-新增独立 `--login-wait-only` 诊断重放：实际日志为 13:15:56 宿主启动、桌面尚非输入桌面，13:15:57 遮罩就绪，13:30:56 十五分钟超时后取消动画。旧策略在虚拟时钟下稳定失败；日志 `artifacts/logs/login-wait-red-0.2.2.txt`。这确认了超时路径，不确认用户何时输入密码，也不证明 Windows 为什么一直未切换桌面。二十分钟后进入输入桌面的后续场景为合成测试。此次整理没有修改播放器、登录策略或固件安装逻辑，故此诊断仍预期失败，并与正常通过检查分开。
-
-## 0.2.2 Insyde 通用设备入口误拦截（2026-10-06）
-
-用户完成 0.2.1 只读检查后报告 `Boot2001: EFI USB Device`。最新报告的 BootOrder 为 Windows → Boot2001 → Boot2002 → Boot2003，当前 Windows 为默认；只读 CIM 确认 BIOS 厂商 `INSYDE Corp.`。重建三个完整 EFI_LOAD_OPTION 后，SHA-256 分别与报告完全一致；数据为活动属性 1、设备路径长度 4、仅结束节点、固定 `RC` 参数，没有实际磁盘或 EFI 文件路径。UEFI 官网发布的 Insyde 2013 演示第 17 页也记录了此通用 USB / 光驱 / 网络格式。
-
-`dotnet run --project tests/WinBootVideo.Checks.csproj -c Release --no-restore -- --insyde-entries-only` 先在精确结构重放中失败于旧规则的 Boot2001 拦截，修复后 **79 项**检查通过。允许范围限于已确认厂商、固定编号 / 名称、变量属性和全部数据一致的三个入口；同名但含实际目标、额外参数、损坏字段、隐藏 / 非活动属性或厂商未知时仍停止。设备快照保存到原恢复记录，安装前及读回后核对；这些项不写入、不删除、不擅自加入启动顺序。恢复只移除自身项，保留后来被其他工具修改的设备内容。
-
-最终 `--boot-logo-only artifacts/OfficialLogoFiles.exe artifacts/WinBootVideo-0.2.2` 通过 **432 项隔离检查**，日志 `artifacts/boot-logo-final-0.2.2.txt`。包含既有回归、三个真实结构的重放、JSON 快照往返、字段损坏 / 名称伪装 / 状态变化拒绝，以及普通单 Windows 与带通用设备入口两种环境的生产事务成功和各阶段失败撤销。官方文件复制只进入普通临时目录；辅助 CLI 未调用 UAC，不写真实 EFI / NVRAM / BCD。检查数包含多种输入损坏情形，不代表真实机器兼容性数量。
-
-桌面前播放策略另通过 **9 项**检查，使用模拟系统适配器。更新后的 GUI 底部渲染已检查，支持范围和恢复确认可读。没有实际安装 Logo、修改启动顺序或进行真实 UEFI 首次启动验证；首次安装仍保留 Windows 默认并要求单次试启动。
-
-已更新既有个人应用目录到 0.2.2，六个运行文件 SHA-256 与最终包一致。旧程序保留于 `app-backup-0.2.1.0-20261006-022959`；settings、原 Shell / 任务备份、登录标记哈希和 HKCU Shell 文本未变。ProgramData Logo 安装记录仍不存在，没有新 UAC、重启或实际固件变更。
-
-## 0.2.1 安装按钮禁用与启动项诊断（2026-10-06）
-
-用户截图及既有管理员报告显示：COLORFUL P15 23 已通过 UEFI x64、Secure Boot 状态、系统盘未加密、单 ESP 和 217 MB 可用空间检查；固件额外启动项被 0.2.0 的单项支持规则拦截，三个确认框也未勾选。旧报告没有额外项编号和路径，不能据此判定双系统或认定为安全 USB 项。本次单独的只读 UAC 被用户取消，没有读到真实启动项清单，未重试提权，也未执行 Logo 安装。
-
-`dotnet run --project tests/WinBootVideo.Checks.csproj -c Release --no-restore -- --boot-logo-only` 的 GUI 回归先失败于“安装按钮禁用时直接列出缺少的步骤”，修复后同一回归通过。按钮旁、禁用按钮提示和“查看安装条件”现在列出缺少的图片、准备包、未通过 / 过期检查及三项确认。辅助报告即使硬件字段完整，只要 Success=false 就不能放行；取消或失败的新检查也使旧结果失效。
-
-最终 `--boot-logo-only artifacts/OfficialLogoFiles.exe artifacts/WinBootVideo-0.2.1` 通过 **318 项隔离检查**，日志 `artifacts/boot-logo-final-0.2.1.txt`。包括既有解析、备份、模拟注册 / 恢复和故障事务，以及新启动项诊断零写入、编号 / 名称 / 路径展示、控制字符清理、名称伪装不放行、检查过期、失败报告、确认撤销和实际 GUI 按钮事件。官方文件复制仍仅使用临时目录，实际辅助 CLI 不调用 UAC，不写真实 EFI / NVRAM / BCD。检查数包括多种截断长度，不代表已测试的真实电脑数。
-
-另通过桌面前播放策略 **9 项**和登录部分恢复 GUI **3 项**检查；使用模拟系统适配器。顶部 / 底部 UI 渲染已查看，新增说明、详情和条件按钮可读。没有重做真实 UEFI 启动验收，也没有改变既有的额外启动项阻止规则、Windows 默认启动项或登录播放流程。诊断仅读取 BootOrder、本次 BootCurrent 和 Boot0000–Boot00FF；设备 / 厂商路径不能解析时保留未知，不仅凭标签认定安全。
-
-界面和说明明确区分 Windows 加载阶段的厂商 BGRT Logo 与刚通电时的固件图片：前者可由 HackBGRT 替换，后者可能仍短暂出现；不提供 BIOS 修改 / 刷写功能。真实启动项仍需用户在新版中完成只读检查后进一步判断。
-
-已将既有个人应用目录更新到 0.2.1，六个运行文件逐个核对 SHA-256 与最终发布包一致，原 0.2.0 程序保留于 `app-backup-0.2.0.0-20261006-015139`。settings、Shell 原始备份、任务原始备份和登录标记哈希未变，HKCU Shell 文本未变；ProgramData Logo 记录仍不存在。用户正在运行的 0.2.0 发布包窗口未结束或覆盖，需关闭后打开新版。没有自动重启或请求新的 UAC。
-
-## 0.2.0 开机 Logo（2026-10-05 至 2026-10-06）
-
-内置 HackBGRT 2.6.0 官方 ZIP，GitHub digest 与本地 SHA-256 一致，保留 MIT、GNU-EFI / Intel 和 shim 版权。新 GUI 包含选图 / 转换、导出、管理员只读检查、固件指引、恢复确认及独立安装 / 恢复入口。普通 GUI、播放器保持 asInvoker，专用辅助进程通过 UAC 工作。
-
-完整 `./verify.ps1 -FFmpegDirectory "E:\项目\ffmpeg\bin" -OutputDirectory artifacts\WinBootVideo-0.2.0` 通过原有 **182 项主检查**、独立可见性 **6 项**、单屏全屏 GUI **8 项**及部分恢复 GUI **3 项**。只有一块屏幕，双屏回归明确 SKIP。Logo 当时通过 303 项；最后增加 EFI 空间未知 / 不足停止条件，独立 `--boot-logo-only` 对最终包通过 **305 项检查**。日志为忽略的 `artifacts/verification-0.2.0.txt` 与 `artifacts/boot-logo-final-0.2.0.txt`。检查数包含不同截断长度，不代表真实机器兼容性数量。
-
-- 模拟固件采用生产解析与事务：计划阶段只读；Windows 默认不变，新项追加末尾，写入后读回；原 Windows Boot####、BCD、BootNext 不写入。未知 / 加密、外来槽位、原项变化、损坏计划、多 ESP、额外启动项、待执行 BootNext 均停止。
-- 故障注入覆盖初始备份落盘、文件复制 / 校验、二次备份、新项 / 顺序写入及最终记录保存。初始备份失败不改 EFI；复制 / 校验失败不改固件；注册后的失败撤销自己的项。撤销不完整明确 Failed 和人工恢复要求，不伪报成功。恢复可重试，保留后来添加的外来项和顺序。
-- 字节与像素覆盖 BMP3 字段、尺寸、行对齐、上下翻转、黑边、PNG 半透明黑底合成、截断数据拒绝；EFI UTF-16 节点边界、GPT GUID 匹配与 TOKEN_PRIVILEGES 的 16 字节 ABI / LUID 偏移 4。
-- 真实 WPF GUI 选图、导出和按钮事件：无图不能导出 / 安装；删除原图后副本有效；未知加密阻止安装；确认可撤销；Secure Boot 需要 shim 确认。安装 Click 使用注入模拟执行器，不调用 UAC。顶部 / 底部渲染核查确认文案和操作详情可读。
-- Framework 4.8 夹具只反射调用锁定官方 InstallFiles 到普通临时目录，未调用 Main、Run、ESP 探测或固件 API。实际六文件通过生产校验，模拟 Windows 文件字节保留。首次因合法 GDI biSizeImage=0 误拒绝，修复后通过；损坏 EFI 与外来文件仍拒绝。
-- 实际辅助 CLI 对不支持操作、普通权限 probe / install 返回失败报告，未知不误报安全，已有报告不覆盖。不调用 UAC，不创建 ProgramData Logo 记录，不写真实 EFI / NVRAM / BCD。
-
-只读识别当前电脑为 COLORFUL P15 23、单系统 ESP；普通权限不能确认安全启动和加密，因此未据此放行实际安装。没有改 Secure Boot、TPM、BitLocker、主板启动顺序或重启；没有虚拟 / 真实 UEFI 首次启动验收。模拟检查与临时复制不能证明固件、shim、更新和断电条件安全。初版保留 Windows 默认，要求恢复介质和单次试启动，不承诺零启动风险。
-
-0.2.0 已更新既有个人应用目录，6 个运行文件的 SHA-256 与最终发布包一致。原版本完整保留于 `app-backup-0.1.6.0-20261006-000939`；settings、Shell 原始备份、任务原始备份与登录标记均核对哈希不变，HKCU Shell 字符串不变。ProgramData Logo 状态目录不存在，未执行 Logo 安装 / 提权检查 / 实际启用。升级后未自动重启或打开非预览播放器。
-
-## 0.1.6 视频先于桌面
-
-用户要求取消桌面出现后再覆盖播放。最近一次真实登录的证据是 Shell 主入口于 21:26:07 启动，21:26:09 确认黑色遮罩并请求 Explorer，直到 21:26:19 才开始媒体加载 / 播放；备用任务同次登录仅记录 duplicate-mutex，没有接管。旧生产 SupervisorPolicy 在 Ready=true、Playback=false、输入桌面尚不可见时已返回 StartDesktop=true，`--strict-desktop-only` 回归在修复前确实失败。日志没有证明具体原生 Z 顺序变化，但明确证明桌面启动与视频呈现之间缺少交接约束。
-
-正常路径现在分开 Ready、Playback、FirstFrame。播放器先等待输入桌面，媒体打开且播放进度前进后，在合成回调核验覆盖与置顶并完成 DwmFlush，才通知 FirstFrame；生产策略只在此后请求 Explorer，覆盖层保持到动画结束及淡出。每次活跃计时重新维持本应用的全屏窗口位置 / 置顶状态，不操作其他程序窗口。没有首帧时取消动画并终止自己的播放器，再放行桌面；不保留晚到的播放。0.1.5 的备用任务经原备份恢复，旧 `--startup-fallback` 命令不启动播放器，已存在可见桌面时 Shell 入口跳过晚到动画。
-
-最终 `./verify.ps1 -FFmpegDirectory "E:\项目\ffmpeg\bin" -OutputDirectory artifacts\WinBootVideo-0.1.6` 通过 **182 项主检查**、独立可见性子进程 **6 项检查**、真实单屏 GUI 全屏 **8 项检查**和 GUI 部分恢复 **3 项检查**。本次只有一块显示器，专门的真实双屏遮罩回归明确 SKIP，未将旧版双屏结果算作本次通过。新增和调整的覆盖包括：
-
-- 生产策略的遮罩就绪不放行、认证等待不放行、播放请求无首帧不放行、实际首帧后一次放行、失败后清理和恢复。
-- 从真实旧版配置形态迁移严格模式：模拟注册表 / 任务确认保留原 Shell 备份、移除自己的备用任务、首次启用不创建任务，仍能恢复普通登录。
-- 实际 Host 与 WPF 的 first-frame-confirmed 在 desktop-release-decision 之前；窗口及全屏 GUI 都完成真实解码、呈现和完整播放。预览模式仅记录生产交接决策，不实际请求 Explorer，因此不等于真实 Winlogon 登录验证。
-- 实际非预览备用命令不创建播放器、不请求 Explorer、不写登录标记；使用独立数据，不修改真实 Shell。
-- 独立宿主分别验证遮罩前卡死、遮罩就绪但无首帧、首帧后卡死。模拟首帧的卡死夹具明确只验证期限，实际呈现由真实 WPF 路径覆盖。
-
-增加首帧握手时还复现宿主意外退出后的命名事件竞态：播放器回调尝试发送信号时事件已随父进程消失，先于 guardian 检测触发 WaitHandleCannotBeOpenedException。现在丢失宿主信号直接按失败退出 31，原独立进程重放由红变绿，宿主死亡回归再次通过。没有改 Windows 全局错误报告、密码 / ARSO、HKLM 或其他用户的启动配置。
-
-此改动锁定本应用的播放与 Explorer 请求顺序。真实下一次登录是否按此顺序退场、用户是否还有桌面闪现，仍需重启后确认；本次不自动重启或切换登录会话。
-
-另用用户已保存的 7 秒素材执行真实 GUI 全屏预览，静音、独立数据和模拟注册表，8 项检查通过：完整播放、首帧确认先于生产交接决策、覆盖和成功凭据有效，没有暂停或改写用户的真实配置。
-
-回归通过后已安装 0.1.6，6 个应用文件的 SHA-256 与发布包一致，旧程序保留于 `app-backup-0.1.5.0-20261005-221022`。迁移命令退出 0 并报告 strictBeforeDesktop=true；只移除本应用原有当前用户备用任务，核验该任务已不存在，HKCU Shell 文本保持原样。settings.json、shell-backup.json、login-task-backup.json 与 last-logon.txt 的 SHA-256 均保持不变，素材哈希和既有成功预览标记匹配。本次迁移没有播放非预览动画、注销或重启，下一次登录直接使用新流程。
-
-## 0.1.5 登录入口缺失与当前用户备用任务
-
-用户确认重启后桌面和任务栏正常，但没有动画，也没有额外的文件夹窗口。0.1.4 已在 16:34:59 成功完整预览用户的 7 秒素材；16:36:13 重启、16:36:36 开始新登录、16:36:42 Explorer 启动后，HKCU Shell 仍精确指向已安装宿主，素材副本、哈希与成功预览标记有效，但 Host / Player 没有本次重启后的日志。
-
-旧会话标记为 `01DD549CB274E62C.0000000000045141`，当前生产读取结果为 `01DD54A4A20636EA.0000000000045E85`，当前会话 Host mutex 不存在，排除旧标记误跳过。当前用户 SID 与桌面 Explorer 所有者一致，32 / 64 位读取的 HKCU Shell 相同，未发现用户或系统 Shell 策略覆盖；相关应用和代码完整性日志没有宿主错误。证据尚不能区分 Windows 未调用 Shell 与宿主进入 Main 前即失败，不宣称已确定底层原因。只读启动审计仍显示本次启动后没有播放记录，下一次真实登录必须另外验证。
-
-用户选择“优先稳定播放，增加登录任务备用入口”。0.1.5 保留原 Shell 优先入口，增加绑定当前用户 SID、交互令牌和最低权限的登录任务；不保存密码、不使用锁屏解锁触发器。备用入口等本会话已有桌面后才进入统一 mutex / 会话标记守卫，等待上限 30 秒，不自行启动 Explorer；Shell 已尝试播放时不重复。备用动画可能在桌面已经出现后覆盖，不能保证无闪现。入口在去重之前记录来源、PID 与版本，另记录等待、重复实例和同会话跳过。
-
-最终 `./verify.ps1 -FFmpegDirectory "E:\项目\ffmpeg\bin" -OutputDirectory artifacts\WinBootVideo-0.1.5` 通过 **174 项主检查**、独立可见性子进程 **6 项检查**、真实双屏 GUI 全屏预览 **8 项检查**，以及 GUI 部分恢复 **3 项检查**。原有保存预览、图片密码等待、真实 WPF 解码、双屏物理覆盖、冷启动、卡死清理和 HDR 转码均再次通过。新增覆盖：
-
-- Shell 与任务启用前分别落盘原始备份，重复启用不覆盖；注册失败回滚本次新增配置，迁移失败保留原有已启用 Shell。
-- 其他用户、同名外部任务、外部修改和篡改备份不会被恢复流程覆盖；任务恢复失败仍独立恢复自己的 Shell。
-- 任务服务读取失败时，实际 GUI Click 仍可恢复自己的 Shell，刷新按钮并清楚报告任务尚未恢复；使用模拟注册表和任务服务。
-- 生产备用等待模块的停用、超时、桌面就绪与等待中取消；生产会话守卫的先写标记、两个入口并发、同会话失败不重播和新登录不误跳过。进程 / 桌面动作通过注入探针验证。
-- 使用 GUID 唯一临时任务，先以 TASK_CREATE 注册禁用登录触发器的生产定义，仅验证 XML、不运行；再经生产 COM 适配器写入独立数据的窗口预览定义并手动运行。实际调度器启动 Host 和 WPF，完成视频解码、播放及成功收据，LastTaskResult=0，未写登录标记；最终只删除确认由本测试创建的任务，缺失任务再次删除仍幂等。
-
-真实 COM 回归首先发现两项 Windows 规范化差异并在修复后通过：缺失任务的 HRESULT 在 .NET 8 映射成 FileNotFoundException；导出 XML 将触发用户 SID 转为账户名，并省略默认最低权限、启用与其他设置。现在按 SID 核对身份并兼容官方默认值，仍拒绝更高权限、其他主体、额外动作或触发器。不能把临时预览任务成功当成真实重启已验证。
-
-安装迁移还发现新加入的 `--repair-startup` 命令在 WPF 界面线程同步等待 `HashAsync`，阻塞捕获该线程上下文的哈希续体。实际旧发布包回归使用 2,175,075 字节独立素材，8.01 秒后进程仍未退出、没有报告，真实 Shell / 任务、独立设置与标记均未改变；仅清理本测试子进程。启动处理现在异步等待校验，不再阻塞 Dispatcher；修复后同一回归约 0.24 秒退出 30，明确拒绝对未拥有启动入口的独立配置首次启用，3 项实际命令检查通过。
-
-完整回归通过后，已更新现有 AppData 安装的 6 个应用文件并核对与最终发布包的 SHA-256 一致。原 0.1.4 应用保留于 `app-backup-0.1.4-20261005-172258`。经用户明确选择，使用修复命令为原有已启用 Shell 补齐真实当前用户登录任务，命令退出 0、报告双入口已启用；任务状态 Ready，唯一动作指向固定安装目录的 Host 及 `--startup-fallback`，SID / 交互令牌 / 最低权限和原任务不存在的恢复备份均已核验。注册后任务从未运行，未注销或重启。
-
-settings.json、原 shell-backup.json 与 last-logon.txt 的 SHA-256 均保持不变，HKCU Shell 文本未变，素材 SHA-256 和既有成功预览标记匹配。保留用户已经成功的预览，不通过伪造收据或标记补齐启用状态。此次仅完成安装与任务注册，真实下一次重启后的动画仍待验证。
-
-## 已通过
-
-0.1.4 使用 `./verify.ps1 -FFmpegDirectory "E:\项目\ffmpeg\bin" -OutputDirectory artifacts\WinBootVideo-0.1.4` 完成 **118 项主流程检查**，其中等待后播放的独立子进程另执行 **6 项检查**。另 `build.ps1 -Test` 的 73 项快速逻辑检查通过；使用用户已保存的 7 秒视频执行真实双屏 GUI 全屏预览，独立 **8 项检查**通过。覆盖：
-
-- 初始化未就绪、播放超时与提前失败的桌面放行决策；纯状态机验证。
-- 遮罩渲染后仍未成为输入桌面时保留动画；输入桌面激活后的握手期限、独立 15 分钟等待期限与播放中离开输入桌面的清理；纯状态机验证。
-- Windows 命令行含空格、中文、引号和尾随反斜线的参数往返。
-- 写入前持久化备份、重复启用、错误 SID、恢复值 / 类型、其他 Shell 保护与写后异常回滚；使用模拟注册表。
-- 当前真实登录标识稳定性；跨重启 LUID 复用时，通过登录时间区分会话。
-- 保存本地素材副本与 SHA-256；移走原视频后固定副本仍存在。
-- FFmpeg 实际输出 1080p / 30 fps / H.264 / 8 位；限长、移除音轨、AAC 双声道 / 48 kHz；拒绝覆盖已有输出。
-- 生成 10 位 PQ 测试视频，识别 HDR，实际色调映射输出 SDR。
-- WPF 窗口模式真实加载 / 播放 / 退出；损坏视频不能取得成功凭据，长视频在期限内退出。
-- 模拟子进程在就绪前 / 就绪后卡死，宿主分别按可见后的 30 秒冷启动期限 / 总播放上限终止自己启动的子进程。
-- 强制结束本次测试的宿主进程，实际播放器的守护线程随后退出；缺失播放器时 Framework 宿主仍能执行失败路径。
-- 配置复制保留所选视频与全部非默认值；实际 GUI 的“保存并全屏预览” Click 事件完成保存 / 播放后解锁启用按钮，并保留音量 / 淡出 / 副屏选项；使用模拟注册表确认预览不注册 Shell。
-- 实际发布版播放器运行于新建的非输入桌面，UOI_IO=false；创建窗口后等待 8 秒，超过所设 5 秒播放预算，仍未提前播放或退出。测试不切换用户输入桌面，结束后仅清理自己创建的进程与桌面。
-- 实际 WPF Player / MediaElement 的可见性探针先保持 false 6 秒（超过所设 2 秒初始化与 5 秒播放预算），确认 Source=null、Position=0；随后放行，首次解码从开头开始，完整播放 2 秒视频并生成成功收据。
-- 实际已发布 Host 在私有非输入桌面启动延迟 10 秒才发送 Ready 的独立进程：第 8 秒 Host 与子进程都仍存活，未消耗所设 2 秒初始化或 5 秒播放上限，随后正常结束。旧版相同路径于 2 秒结束并杀掉子进程，回归先红后绿。
-- 生产桌面请求协调模块模拟 GetShellWindow 尚未建立、首次请求后 finally 再调用、启动代理正常退出、12 次并发请求，以及明确启动失败的冷却和最多 2 次重试；成功请求均只执行一次。旧逻辑在首次请求后 finally 再调用时启动了两次，回归先红后绿。
-- 实际发布版播放器不带 `--windowed`，开启副屏遮罩，在两个真实屏幕的私有非输入桌面上建立主窗口与副屏窗口，收到 Ready 且不开始播放；旧版 5 秒无 Ready，修复后约 0.5 秒就绪。
-- 实际 GUI 保存按钮不带窗口化测试选项，使用用户 7 秒视频、静音、开启副屏遮罩。生产 Host 与播放器完成副屏渲染、物理覆盖、输入桌面确认、从零播放、解码与正常结束；预览成功标记和启用按钮均有效。独立配置、模拟注册表，不修改用户设置。
-
-## 0.1.4 双屏全屏预览一直黑屏
-
-用户两次真实预览分别在约 9.6 秒、24.5 秒按 Esc 退出。日志显示主窗口约 0.56 秒已 ContentRendered，但没有副屏渲染、Ready 或 playback-start，退出时视频位置始终为 0。此阶段还未加载视频，不能归因于解码慢或图片密码等待。
-
-旧版副屏 Window 只有 Background，没有 Content，却等待它的 ContentRendered。Microsoft [官方文档](https://learn.microsoft.com/en-us/dotnet/api/system.windows.window.contentrendered?view=windowsdesktop-10.0) 明确说明无内容窗口不会触发该事件；因此所有遮罩就绪等待无法完成。最小修复为副屏添加黑色 Border 内容，保留原有渲染完成等待、HWND 屏幕边界核验、可见桌面门控、Esc 及淡出行为。
-
-真实双屏回归先在已发布 0.1.3 上失败：两个窗口已显示、主渲染完成，5.04 秒仍未 Ready；0.1.4 同路径副屏约 490 毫秒渲染、492 毫秒 Ready，6 项检查通过。私有桌面不切换到用户输入桌面，测试子进程均清理。随后用户原视频副本经真实 GUI 全屏预览完整播放，8 项检查通过。以往窗口化 GUI / CLI 检查未建立副屏遮罩，覆盖不足；现在 `verify.ps1` 除私有桌面多屏回归外，会用另一个测试进程运行实际双屏 GUI 全屏播放，避免同一进程创建多个 WPF Application。少于两块屏幕时明确 SKIP。
-
-此次读到的真实 HKCU Shell 值已不存在，视频验证标记为空：用户保存新预览时按设计恢复了普通登录，取消的预览未解锁启用。自动测试不会替用户写入成功标记或重新启用；须在新版中成功预览后点击“启用登录动画”。真实关机再开机仍需复测。
-
-回归通过后已更新现有安装目录中的 6 个应用文件，并逐个核对 SHA-256 与 0.1.4 发布包一致；旧程序保留于 `app-backup-0.1.3-20261005-163229`。settings.json、shell-backup.json 的 SHA-256 及 HKCU Shell 均保持原样，当前仍为普通登录。本次未注销或重启。
-
-## 0.1.3 关机后再开机缺失动画与 Explorer 重复请求
-
-用户的两次真实失败日志都显示：Host 已启动播放器，未收到遮罩 Ready，在 8 秒时记录 startup-timeout；紧接着同一秒两次记录 Explorer requested。素材副本存在，SHA-256 与配置、已预览标记匹配。此前另一次 0.1.2 真实登录记录了等待输入桌面后从 0 播放完整 7 秒，说明本次不能归因于原素材删除或视频前段仍被偷播。
-
-0.1.2 只把 Ready 之后的不可见等待分开，Ready 之前仍使用启动总时间，留下了此次缺口。现在 8 秒到时只请求桌面继续准备；输入桌面尚不可见时不终止初始化中的播放器，桌面可见后才启用独立 30 秒冷启动硬期限；迟到的 Ready 另获得完整播放握手预算。UI 定时器和独立 guardian 同步使用这些阶段，15 分钟安全等待上限即使从未 Ready 也有效。所有 EnsureDesktop 路径共用桌面请求协调模块，成功请求只执行一次，不因 Explorer 代理返回但 Shell HWND 尚未建立而重复请求。
-
-增加 App.OnStartup、构造、HWND、Loaded、ContentRendered 和副屏渲染节点。旧日志尚不能区分冷启动 CLR/WPF 慢、渲染迟到或其他初始化停顿，因此不宣称已确定某一个底层原因。下一次真实关机再开机仍需复测；若触发无遮罩的软回退，可能短暂看到普通桌面。
-
-失败回归曾因测试主程序未捕获断言异常而弹出 WinBootVideo.Checks.exe 系统错误框。测试入口现在捕获断言及清理失败、向 stderr 写明错误并返回非零退出码；仅对测试进程设置不弹出严重错误报告的模式。测试夹具也捕获事件已被父进程移除等错误。没有更改 Windows 全局错误报告配置。
-
-## 0.1.2 图片密码登录时序修复
-
-用户反馈重启后输入图片密码，只看到视频结尾。旧版实际播放器在不可见的私有桌面上仍然解码、推进视频，约 4.8 秒后触发所设 5 秒总预算；收据 Opened=true、PlaybackAdvanced=true。此回归在修复前失败，修复后等待 8 秒仍保持未播放。
-
-根因是把 ContentRendered 当成可见播放起点，并从进程启动开始计算视频预算。现在分开“遮罩已渲染”和“请求播放”信号：先放行 Explorer，让 Winlogon 能切换桌面；UI 线程确认自己的桌面连续 300 毫秒接收输入后，再加载视频、从零播放。Host、播放器 UI 定时器与独立 guardian 的播放期限都从实际请求播放起计算，等待登录画面的时间单独保护。会话去重保留，播放中再锁屏或进入安全桌面会终止本次动画，后续解锁不重播。
-
-新增 logs/playback-timing.log 记录遮罩渲染、输入桌面状态、从零开始播放与退出原因；不记录图片密码手势或凭据。Windows 是否在本机经 ARSO 先登录再锁定、真实登录画面退场的具体时刻尚未被现有日志证明；自动回归证实的是不可见桌面提前播放及计时问题。修复仍须用户在真实重启后的图片密码登录中复测。
-
-## 0.1.1 预览按钮修复
-
-用户反馈初版保存预览没有反应。应用日志显示保存前本地视频路径校验失败。单测与实际 GUI Click 流程都复现失败：`Settings.Copy` 以 camelCase 序列化，反序列化时却没有传相同的选项，导致视频路径和自定义设置被重置为默认值。修复后两条回归路径均通过；0.1 的播放器 CLI 检查未覆盖这个 GUI 保存环节，因此本版补上完整的按钮流程验证。
-
-另使用用户反馈中的 7 秒本地 H.264 / AAC 视频执行相同的实际 GUI Click 回归，4 项 GUI 检查通过：预览完成、启用按钮解锁、设置保留、未注册 Shell。
-
-单独运行 GUI 回归（可在最后追加自选视频路径，测试预览静音、使用独立数据与模拟注册表）：
+Logo 回归使用模拟固件；GUI 的安装和恢复执行器为模拟对象。官方安装器夹具不调用固件、BCD、挂载或安装主入口。自动检查不代表完整真实启动测试。
 
 ```powershell
-& 'C:\Program Files\dotnet\dotnet.exe' run --project tests\WinBootVideo.Checks.csproj -c Release --no-restore -- --gui-only 'E:\Project\WinBootVideo\artifacts\WinBootVideo-0.1.4'
-& 'C:\Program Files\dotnet\dotnet.exe' run --project tests\WinBootVideo.Checks.csproj -c Release --no-restore -- --gui-fullscreen-only 'E:\Project\WinBootVideo\artifacts\WinBootVideo-0.1.4'
+.\build.ps1 -Test
+New-Item -ItemType Directory artifacts\fixtures -Force | Out-Null
+& "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /platform:x64 /out:artifacts\fixtures\OfficialLogoFiles.exe tests\fixtures\OfficialLogoFiles.cs
+& "$env:ProgramFiles\dotnet\dotnet.exe" run --project tests\WinBootVideo.Checks.csproj -c Release --no-restore -- --boot-logo-only artifacts\fixtures\OfficialLogoFiles.exe artifacts\WinBootVideo
 ```
 
-0.1.1 时另完成 5 秒示例的实际全屏预览：退出码 0，约 6.5 秒结束（包括进程启动与淡出）；视频已加载、播放进度前进，窗口边界与选择的屏幕边界一致（`screenCoverageVerified: true`）。当时 GUI 已渲染并视觉检查，见 `artifacts/gui-preview.png`；当时只读检查未发现当前用户 Winlogon 键，开发流程没有创建 Shell 覆盖值。用户随后自行通过 GUI 启用了登录动画。
+0.2.6 固定发布目录已通过上述 125 项和 476 项检查；更新后的软件说明界面已渲染并检查。既有个人应用已更新，运行文件逐一核对，个人设置及 Logo 恢复资料保持不变；本次没有重新安装 Logo 或修改固件配置。
 
-0.1.2 完整回归通过后，已更新用户当前启用目录中的 6 个应用文件，逐个校验 SHA-256 与发布包一致；原应用目录保留为 app-backup-0.1.1-20261005-031025。settings.json、shell-backup.json 的 SHA-256 与 HKCU Shell 文本均核验保持原样；本次更新未注销或重启系统。
+完整媒体回归可运行 `verify.ps1 -FFmpegDirectory <FFmpeg目录>`，要求目录中同时包含 ffmpeg.exe 和 ffprobe.exe。
 
-0.1.3 完整回归通过后再次更新上述 6 个应用文件并逐个校验 SHA-256；原 0.1.2 程序保留为 app-backup-0.1.2-20261005-160636。settings.json、恢复备份和 HKCU Shell 再次核验保持原样。用户素材副本大小 1,856,280 字节、SHA-256 与配置匹配，原位置视频可以删除，应用数据目录中的副本须保留。
+## 已覆盖的 Logo 保护条件
 
-## 尚需真实使用验证
+- 首次安装只追加自身独立项，不覆盖 Windows 启动器；原 Windows 默认入口保留。
+- 分区、系统盘加密、可用空间、启动项结构和固件设备格式不明确时停止。
+- Insyde 通用 USB / 光驱 / 网络入口按厂商、编号、属性和完整字节核验，安装与恢复不更改这些项。
+- 原始恢复记录先于文件和固件写入保存；各阶段失败撤销自身变更，撤销不完整时保留失败记录。
+- 安装后检查核对受保护记录、原 Windows 项、自身项完整字节、已保存设备项、六文件哈希、Windows 文件和恢复备份。
+- 单次从 HackBGRT 启动或手动设为默认后可以识别已安装状态；无记录、未完成 / 损坏记录和外来变化不放行重复安装。
+- 官方卷 GUID 路径兼容由安装器本地配置启用，不修改系统注册表、分配盘符或格式化分区。
+- 图片转换覆盖透明合成、黑边、BMP 行对齐和损坏数据拒绝。
 
-- 从 Winlogon 到 Explorer 的真实登录时序，以及欢迎页是否短暂残留、桌面 / 壁纸插件是否有可见闪烁。
-- 真实 Shell / 任务备份恢复与注销登录；开发恢复回归使用模拟注册表及独立临时任务。0.1.2 曾一次完整播放，0.1.4 成功预览后真实重启仍缺少入口日志；已安装并补齐备用任务的 0.1.5 待下一次重启复测。
-- 锁屏解锁与注销重登行为；基于 Shell 生命周期和会话去重实现，尚未执行实际会话切换。
-- 混合 DPI 多屏、屏幕热插拔、远程桌面、多用户并发登录与第三方桌面组件。
-- 用户自己的视频画面、音频、HDR 色调映射质量；合成素材只验证处理管线能够运行。
+## 待验证事项
 
-首次使用建议先选包内短示例，成功预览后在 GUI 启用，并保留数据目录中的恢复入口。以上限制也见 README。
+- 不同主板、混合 DPI 多屏、远程桌面、多用户会话及第三方桌面组件。
+- 固件更新、Secure Boot 数据库更新、断电或其他工具改动启动项后的兼容性。
+- Windows Hello / PIN、TPM 相关功能及各游戏反作弊环境。
+- 登录视频的真实冷启动时序。独立 `--login-wait-only` 诊断重放目前仍预期失败，记录输入桌面长期不可见时的超时路径；开机 Logo 的实机反馈不代表该问题已修复。
+
+本地验证日志位于 artifacts/logs，界面渲染位于 artifacts/screenshots，均不提交到源码仓库。个人设置、媒体和恢复资料保存在应用数据目录，不能作为示例配置上传。
