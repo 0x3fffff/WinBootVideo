@@ -1,0 +1,47 @@
+name: Windows build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          global-json-file: global.json
+      - name: Build, isolated checks and package
+        run: ./build.ps1 -Test -Package
+      - name: Check Logo ownership and desktop policy
+        run: |
+          foreach ($suite in @('--installed-logo-only', '--insyde-entries-only', '--strict-desktop-only')) {
+            dotnet run --project tests/WinBootVideo.Checks.csproj -c Release --no-build --no-restore -- $suite
+            if ($LASTEXITCODE -ne 0) { throw "Check failed: $suite" }
+          }
+      - name: Generate SHA-256
+        run: |
+          $hash = (Get-FileHash -LiteralPath artifacts/WinBootVideo.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  WinBootVideo.zip" | Set-Content -LiteralPath artifacts/WinBootVideo.zip.sha256 -Encoding ascii
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: WinBootVideo-windows-x64
+          path: |
+            artifacts/WinBootVideo.zip
+            artifacts/WinBootVideo.zip.sha256
+          if-no-files-found: error
+          retention-days: 14

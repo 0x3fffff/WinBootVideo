@@ -61,10 +61,11 @@
               </StackPanel>
             </Grid>
             <Border Style="{StaticResource Card}" Margin="0,20,0,0"><StackPanel>
-              <TextBlock Text="导出准备包" FontSize="17" FontWeight="SemiBold"/>
-              <TextBlock Text="包含处理后的图片、配置、官方工具和恢复说明。导出不会更改启动设置；软件安装时使用这份已校验的图片。" Style="{StaticResource Small}" Margin="0,8,0,14"/>
+              <TextBlock Text="保存安装材料（准备包）" FontSize="17" FontWeight="SemiBold"/>
+              <TextBlock Text="当前版本安装前必须导出，安装使用包内图片。包含转换后的图片、配置、官方工具和操作说明；导出本身不会启用 Logo。" Style="{StaticResource Small}" Margin="0,8,0,14"/>
               <Button x:Name="ExportButton" Content="选择目录并导出…" Click="ExportClick" HorizontalAlignment="Left" IsEnabled="False"/>
-              <TextBlock x:Name="PreparedText" Text="尚未导出。建议把恢复说明另存到手机或其他设备。" Style="{StaticResource Small}" Margin="0,12,0,0"/>
+              <TextBlock x:Name="PreparedText" Text="尚未导出。" Style="{StaticResource Small}" Margin="0,12,0,0"/>
+              <TextBlock Text="试启动成功后可删除准备包。它不是本机启动备份；安装生成的 ProgramData 恢复记录需要保留，恢复说明另存到其他设备。" Style="{StaticResource Small}" Margin="0,8,0,0"/>
             </StackPanel></Border>
           </StackPanel>
           <StackPanel x:Name="InstallPage" Visibility="Collapsed">

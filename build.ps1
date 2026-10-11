@@ -31,16 +31,23 @@ New-Item -ItemType Directory -Path $env:LOCALAPPDATA -Force | Out-Null
 try {
 & $sdk restore (Join-Path $taskRoot 'src\WinBootVideo\WinBootVideo.csproj') --configfile (Join-Path $taskRoot 'NuGet.Config')
 if ($LASTEXITCODE -ne 0) { throw '离线还原失败。' }
-& $sdk publish (Join-Path $taskRoot 'src\WinBootVideo\WinBootVideo.csproj') -c Release -o $output --self-contained false --no-restore
+& $sdk publish (Join-Path $taskRoot 'src\WinBootVideo\WinBootVideo.csproj') -c Release -o $output --self-contained false --no-restore -p:DebugType=None -p:DebugSymbols=false
 if ($LASTEXITCODE -ne 0) { throw 'GUI 编译失败。' }
+$symbols = [IO.Path]::GetFullPath((Join-Path $output 'WinBootVideo.pdb'))
+if (!$symbols.StartsWith([IO.Path]::GetFullPath($output) + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+    throw '调试符号清理必须在构建目录内。'
+}
+if (Test-Path -LiteralPath $symbols) { Remove-Item -LiteralPath $symbols }
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 & $compiler /nologo /target:winexe /platform:x64 /optimize+ "/win32icon:$taskRoot\assets\WinBootVideo.ico" "/out:$output\WinBootVideo.Host.exe" /r:System.Web.Extensions.dll /r:System.Xml.dll (Join-Path $taskRoot 'src\Host\Program.cs') (Join-Path $taskRoot 'src\Host\LoginAttemptGate.cs') (Join-Path $taskRoot 'src\Host\SupervisorPolicy.cs') (Join-Path $taskRoot 'src\Host\LogonSessionIdentity.cs') (Join-Path $taskRoot 'src\Host\DesktopLaunchCoordinator.cs') (Join-Path $taskRoot 'src\Shared\WindowsCommandLine.cs') (Join-Path $taskRoot 'src\Shared\InputDesktopState.cs') (Join-Path $taskRoot 'src\Shared\StartupLimits.cs') (Join-Path $taskRoot 'src\Shared\LoginTaskSupport.cs')
 if ($LASTEXITCODE -ne 0) { throw '宿主编译失败。' }
 Copy-Item -LiteralPath (Join-Path $taskRoot 'src\Host\WinBootVideo.Host.exe.config') -Destination $output
-foreach ($document in @('README.md', 'LICENSE', 'QA.md', 'THIRD-PARTY-NOTICES.md')) {
+foreach ($document in @('README.md', 'LICENSE', 'QA.md', 'THIRD-PARTY-NOTICES.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'SECURITY.md')) {
     $source = Join-Path $taskRoot $document
     if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $output }
 }
+$docsSource = Join-Path $taskRoot 'docs'
+Copy-Item -LiteralPath $docsSource -Destination $output -Recurse -Force
 $demo = Join-Path $taskRoot 'assets\demo-login.mp4'
 $licenses = Join-Path $output 'licenses'
 New-Item -ItemType Directory -Path $licenses -Force | Out-Null

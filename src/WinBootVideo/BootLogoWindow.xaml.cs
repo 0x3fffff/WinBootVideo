@@ -120,7 +120,7 @@ public partial class BootLogoWindow : Window
         };
         LogoNextButton.ToolTip = step == 0 && !supported ? "先完成管理员只读检查；不支持的配置请查看报告。" :
             step == 1 && (image == null || prepared.Length == 0) ? "先选择图片并导出准备包。" : "继续";
-        PreparedText.Text = prepared.Length > 0 ? "已导出：" + prepared : "尚未导出。建议把恢复说明另存到手机或其他设备。";
+        PreparedText.Text = prepared.Length > 0 ? "已导出：" + prepared : "尚未导出。安装前请先保存这份材料。";
         PreparedText.ToolTip = prepared;
         LogoBadge.Text = busy ? "操作进行中" : alreadyInstalled ? logoIsDefault switch
         {
@@ -194,7 +194,7 @@ public partial class BootLogoWindow : Window
     {
         if (busy || image == null) return;
         prepared = "";
-        try { prepared = BootLogoPackage.Extract(newDirectory, image); LogoStatus.Text = "准备包已导出：" + prepared + "。删除原图不影响准备包；导出未改启动设置。"; }
+        try { prepared = BootLogoPackage.Extract(newDirectory, image); LogoStatus.Text = "安装材料已保存：" + prepared + "。尚未启用 Logo；安装与试启动完成前请保留此目录。"; }
         catch (Exception ex) { LogoStatus.Text = ex.Message; }
         Refresh();
     }

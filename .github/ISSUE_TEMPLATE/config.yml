@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 使用与恢复说明
+    url: https://github.com/0x3fffff/WinBootVideo/blob/main/docs/usage.md
+    about: 安装前准备、首次启动、默认入口与恢复方法
+  - name: 私密漏洞报告
+    url: https://github.com/0x3fffff/WinBootVideo/security/advisories/new
+    about: 权限、文件写入或恢复边界的漏洞

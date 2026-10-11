@@ -29,6 +29,7 @@ internal static class ApplicationGuide
         开机 Logo：检查电脑 → 准备图片 → 确认与安装 → 首次启动与生效
         先运行管理员只读检查。支持范围和阻止原因显示在界面中；检查不通过时，不要删除启动项或关闭安全功能绕过。
         PNG / JPEG / BMP 会自动转为黑底、保留比例的 24 位 BMP3。导出准备包，准备恢复 U 盘、帐户密码及另一设备上的恢复说明。
+        准备包是安装材料文件夹，不是恢复 U 盘或本机启动备份。当前版本必须先导出，安装读取包内图片；只导出没有开机效果变化。已导出、尚未安装时保留包；安装且试启动成功后可以删除。
         安装创建独立 HackBGRT 启动项，Windows Boot Manager 保持默认；不刷 BIOS。
         安装成功不代表每次启动已生效。先从固件 Boot Menu 单次选择 HackBGRT，完成必要的 shim 文件哈希确认，确认 Logo 与登录正常，再在 BIOS 中将 HackBGRT 设为第一启动项并保存。
         保留 Secure Boot、TPM、UEFI / CSM 和 SATA 设置。首次蓝色 Verification failed 提示的完整按键步骤在 Logo 向导第四步中。

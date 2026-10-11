@@ -1,0 +1,45 @@
+name: 问题报告
+description: 播放、界面、检查、安装或恢复出现异常
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: "提供最小复现和必要日志。不要上传密码、恢复密钥、私人素材或完整恢复目录。安全漏洞请使用仓库 Security 页的私密报告。"
+  - type: input
+    id: version
+    attributes:
+      label: 软件版本
+      placeholder: 0.3.0
+    validations:
+      required: true
+  - type: dropdown
+    id: feature
+    attributes:
+      label: 出错位置
+      options:
+        - 登录动画：选视频 / 预览
+        - 登录动画：实际登录 / 恢复
+        - 开机 Logo：检查 / 导出
+        - 开机 Logo：安装 / 试启动 / 恢复
+        - 其他界面问题
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: Windows 版本、设备 / 固件型号。Logo 问题同时说明 Secure Boot 与磁盘加密状态。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 如何复现
+      description: 操作步骤、期望结果、实际结果；说明是预览、重启还是关机后开机。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 错误文本或脱敏日志
+      description: 可粘贴完整错误文本或必要截图，不必上传整个目录。
